@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	batchSize = 500
+	batchSize = 1000
 )
 
 func NewMbtilesOutputter(dsn string) (*mbtilesOutputter, error) {
