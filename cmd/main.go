@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/iandees/go-tilepacks/tilepack"
+	"github.com/tilezen/go-tilepacks/tilepack"
 )
 
 type TileRequest struct {
