@@ -8,6 +8,8 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"sync"
@@ -121,7 +123,20 @@ func main() {
 	numHTTPWorkers := flag.Int("workers", 25, "Number of HTTP client workers to use.")
 	gzipEnabled := flag.Bool("gzip", false, "Request gzip encoding from server and store gzipped contents in mbtiles. Will gzip locally if server doesn't do it.")
 	requestTimeout := flag.Int("timeout", 60, "HTTP client timeout for tile requests.")
+	cpuProfile := flag.String("cpuprofile", "", "Enables CPU profiling. Saves the dump to the given path.")
 	flag.Parse()
+
+	if *cpuProfile != "" {
+		f, err := os.Create(*cpuProfile)
+		if err != nil {
+			log.Fatal("could not create CPU profile: ", err)
+		}
+		defer f.Close()
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal("could not start CPU profile: ", err)
+		}
+		defer pprof.StopCPUProfile()
+	}
 
 	if *outputStr == "" {
 		log.Fatalf("Output path is required")
