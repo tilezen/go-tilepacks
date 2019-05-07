@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -38,6 +39,9 @@ const (
 func httpWorker(wg *sync.WaitGroup, id int, client *http.Client, jobs chan *TileRequest, results chan *TileResponse) {
 	defer wg.Done()
 
+	bodyBuffer := bytes.NewBuffer(nil)
+	bodyGzipper := gzip.NewWriter(bodyBuffer)
+
 	for request := range jobs {
 		start := time.Now()
 
@@ -63,29 +67,46 @@ func httpWorker(wg *sync.WaitGroup, id int, client *http.Client, jobs chan *Tile
 			continue
 		}
 
-		body, err := ioutil.ReadAll(resp.Body)
+		var bodyData []byte
+		if request.Gzip {
+			contentEncoding := resp.Header.Get("Content-Encoding")
+			if contentEncoding == "gzip" {
+				bodyData, err = ioutil.ReadAll(resp.Body)
+			} else {
+				_, err = io.Copy(bodyGzipper, resp.Body)
+				if err != nil {
+					log.Printf("Couldn't copy to gzipper: %+v", err)
+					continue
+				}
+
+				err = bodyGzipper.Flush()
+				if err != nil {
+					log.Printf("Couldn't flush gzipper: %+v", err)
+					continue
+				}
+
+				bodyData, err = ioutil.ReadAll(bodyBuffer)
+				if err != nil {
+					log.Printf("Couldn't read bytes into byte array: %+v", err)
+					continue
+				}
+				bodyBuffer.Reset()
+			}
+		} else {
+			bodyData, err = ioutil.ReadAll(resp.Body)
+		}
+		resp.Body.Close()
+
 		if err != nil {
 			log.Printf("Error copying bytes from HTTP response: %+v", err)
 			continue
 		}
-		resp.Body.Close()
 
 		secs := time.Since(start).Seconds()
 
-		if request.Gzip {
-			contentEncoding := resp.Header.Get("Content-Encoding")
-			if contentEncoding != "gzip" {
-				var b bytes.Buffer
-				w := gzip.NewWriter(&b)
-				w.Write(body)
-				w.Close()
-				body = b.Bytes()
-			}
-		}
-
 		results <- &TileResponse{
 			Tile:    request.Tile,
-			Data:    body,
+			Data:    bodyData,
 			Elapsed: secs,
 		}
 	}
@@ -120,7 +141,6 @@ func processResults(waitGroup *sync.WaitGroup, results chan *TileResponse, proce
 }
 
 func main() {
-
 	urlTemplateStr := flag.String("url", "", "URL template to make tile requests with.")
 	outputStr := flag.String("output", "", "Path to output mbtiles file.")
 	boundingBoxStr := flag.String("bounds", "-90.0,-180.0,90.0,180.0", "Comma-separated bounding box in south,west,north,east format. Defaults to the whole world.")
@@ -201,8 +221,8 @@ func main() {
 	mbtilesOutputter.CreateTiles()
 	log.Println("Created mbtiles output")
 
-	jobs := make(chan *TileRequest, 1000)
-	results := make(chan *TileResponse, 1000)
+	jobs := make(chan *TileRequest, 2000)
+	results := make(chan *TileResponse, 2000)
 
 	// Start up the HTTP workers that will fetch tiles
 	workerWG := &sync.WaitGroup{}
