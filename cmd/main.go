@@ -30,16 +30,38 @@ func httpWorker(wg *sync.WaitGroup, id int, client *http.Client, jobs chan *Tile
 
 	for request := range jobs {
 		start := time.Now()
-		resp, err := client.Get(request.URL)
+
+		httpReq, err := http.NewRequest("GET", request.URL, nil)
+		if err != nil {
+			log.Printf("Unable to create HTTP request: %+v", err)
+			continue
+		}
+		httpReq.Header.Add("Accept-Encoding", "gzip")
+
+		resp, err := client.Do(httpReq)
 		if err != nil {
 			log.Printf("Error on HTTP request: %+v", err)
+			continue
+		}
+
+		if resp.StatusCode != 200 {
+			log.Printf("Failed to GET %+v: %+v", request.URL, resp.Status)
+			continue
+		}
+
+		contentEncoding := resp.Header.Get("Content-Encoding")
+		if contentEncoding != "gzip" {
+			log.Printf("Requested gzipped response, but response Content-Encoding was: %#v (from %+v)", contentEncoding, request.URL)
+			continue
 		}
 
 		secs := time.Since(start).Seconds()
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
 			log.Printf("Error copying bytes from HTTP response: %+v", err)
+			continue
 		}
+		resp.Body.Close()
 
 		results <- &TileResponse{
 			Tile:    request.Tile,
