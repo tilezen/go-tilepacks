@@ -31,7 +31,8 @@ type TileResponse struct {
 }
 
 const (
-	httpUserAgent = "go-tilepacks/1.0"
+	httpUserAgent   = "go-tilepacks/1.0"
+	saveLogInterval = 10000
 )
 
 func httpWorker(wg *sync.WaitGroup, id int, client *http.Client, jobs chan *TileRequest, results chan *TileResponse) {
@@ -93,6 +94,8 @@ func httpWorker(wg *sync.WaitGroup, id int, client *http.Client, jobs chan *Tile
 func processResults(waitGroup *sync.WaitGroup, results chan *TileResponse, processor tilepack.TileOutputter) {
 	defer waitGroup.Done()
 
+	start := time.Now()
+
 	counter := 0
 	for result := range results {
 		err := processor.Save(result.Tile, result.Data)
@@ -102,8 +105,10 @@ func processResults(waitGroup *sync.WaitGroup, results chan *TileResponse, proce
 
 		counter++
 
-		if counter%10000 == 0 {
-			log.Printf("Saved %dk tiles", counter/1000)
+		if counter%saveLogInterval == 0 {
+			duration := time.Since(start)
+			start = time.Now()
+			log.Printf("Saved %dk tiles (%0.1f tiles per second)", counter/1000, saveLogInterval/duration.Seconds())
 		}
 	}
 	log.Printf("Saved %d tiles", counter)
