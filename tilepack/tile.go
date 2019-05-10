@@ -9,6 +9,15 @@ const oneEighty float64 = 180.0
 const radius float64 = 6378137.0
 const webMercatorLatLimit float64 = 85.05112877980659
 
+type GenerateTilesConsumerFunc func(tile *Tile)
+
+type GenerateTilesOptions struct {
+	Bounds       *LngLatBbox
+	Zooms        []uint
+	ConsumerFunc GenerateTilesConsumerFunc
+	InvertedY    bool
+}
+
 //Tile struct is the main object we deal with, represents a standard X/Y/Z tile
 type Tile struct {
 	X, Y, Z uint
@@ -76,7 +85,12 @@ func GetTile(lng float64, lat float64, zoom uint) *Tile {
 
 }
 
-func GenerateTiles(bounds *LngLatBbox, zooms []uint, consumer func(tile *Tile)) {
+func GenerateTiles(opts *GenerateTilesOptions) {
+
+	bounds := opts.Bounds
+	zooms := opts.Zooms
+	consumer := opts.ConsumerFunc
+
 	var boxes []*LngLatBbox
 	if bounds.West > bounds.East {
 		boxes = []*LngLatBbox{
@@ -113,6 +127,14 @@ func GenerateTiles(bounds *LngLatBbox, zooms []uint, consumer func(tile *Tile)) 
 
 			for i := llx; i < min(ur.X+1, 1<<z); i++ {
 				for j := ury; j < min(ll.Y+1, 1<<z); j++ {
+
+					if opts.InvertedY {
+						// https://gist.github.com/tmcw/4954720
+						inverted := uint(math.Pow(2.0, float64(z)))
+						inverted = inverted - 1 - j
+						j = inverted
+					}
+
 					consumer(&Tile{Z: z, X: i, Y: j})
 				}
 			}
