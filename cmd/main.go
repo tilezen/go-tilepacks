@@ -39,6 +39,7 @@ const (
 func httpWorker(wg *sync.WaitGroup, id int, client *http.Client, jobs chan *TileRequest, results chan *TileResponse) {
 	defer wg.Done()
 
+	// Instantiate the gzip support stuff once instead on every iteration
 	bodyBuffer := bytes.NewBuffer(nil)
 	bodyGzipper := gzip.NewWriter(bodyBuffer)
 
@@ -73,6 +74,10 @@ func httpWorker(wg *sync.WaitGroup, id int, client *http.Client, jobs chan *Tile
 			if contentEncoding == "gzip" {
 				bodyData, err = ioutil.ReadAll(resp.Body)
 			} else {
+				// Reset at the top in case we ran into a continue below
+				bodyBuffer.Reset()
+				bodyGzipper.Reset(bodyBuffer)
+
 				_, err = io.Copy(bodyGzipper, resp.Body)
 				if err != nil {
 					log.Printf("Couldn't copy to gzipper: %+v", err)
@@ -90,7 +95,6 @@ func httpWorker(wg *sync.WaitGroup, id int, client *http.Client, jobs chan *Tile
 					log.Printf("Couldn't read bytes into byte array: %+v", err)
 					continue
 				}
-				bodyBuffer.Reset()
 			}
 		} else {
 			bodyData, err = ioutil.ReadAll(resp.Body)
