@@ -97,9 +97,8 @@ func (o *mbtilesOutputter) Save(tile *Tile, data []byte) error {
 		o.txn = tx
 	}
 
-	hasher := md5.New()
-	hasher.Write(data)
-	tileID := hex.EncodeToString(hasher.Sum(nil))
+	hash := md5.Sum(data)
+	tileID := hex.EncodeToString(hash[:])
 
 	_, err := o.txn.Exec("INSERT OR REPLACE INTO images (tile_id, tile_data) VALUES (?, ?);", tileID, data)
 	if err != nil {
