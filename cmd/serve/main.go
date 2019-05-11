@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/tilezen/go-tilepacks/tilepack"
 )
@@ -58,13 +59,26 @@ func (o *MbtilesHandler) TilesHandler() http.HandlerFunc {
 			return
 		}
 
-		w.WriteHeader(http.StatusOK)
+		if result.Data == nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		acceptEncoding := r.Header.Get("Accept-Encoding")
+		if strings.Contains(acceptEncoding, "gzip") {
+			w.Header().Set("Content-Encoding", "gzip")
+		} else {
+			log.Printf("Requester doesn't accept gzip but our mbtiles have gzip in them")
+		}
+
+		w.Header().Set("Content-Type", "application/x-protobuf")
 		w.Write(*result.Data)
 	}
 }
 
 func main() {
 	mbtilesFile := flag.String("input", "", "The name of the mbtiles file to serve from.")
+	addr := flag.String("listen", ":8080", "The address and port to listen on")
 	flag.Parse()
 
 	if *mbtilesFile == "" {
@@ -80,14 +94,15 @@ func main() {
 	http.Handle("/tilezen/", mbtilesHandler.TilesHandler())
 	http.HandleFunc("/", defaultHandler)
 
-	err = http.ListenAndServe(":8080", nil)
+	log.Printf("Serving at %s", *addr)
+	err = http.ListenAndServe(*addr, nil)
 	if err != nil {
 		log.Fatalf("Problem serving: %+v", err)
 	}
 }
 
 func previewHTMLHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "preview html")
+	http.ServeFile(w, r, "cmd/serve/static/preview.html")
 }
 
 func defaultHandler(w http.ResponseWriter, r *http.Request) {
