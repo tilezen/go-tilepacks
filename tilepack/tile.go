@@ -128,14 +128,15 @@ func GenerateTiles(opts *GenerateTilesOptions) {
 			for i := llx; i < min(ur.X+1, 1<<z); i++ {
 				for j := ury; j < min(ll.Y+1, 1<<z); j++ {
 
+					x := i
+					y := j
+
 					if opts.InvertedY {
 						// https://gist.github.com/tmcw/4954720
-						inverted := uint(math.Pow(2.0, float64(z)))
-						inverted = inverted - 1 - j
-						j = inverted
+						y = uint(math.Pow(2.0, float64(z))) - 1 - y
 					}
 
-					consumer(&Tile{Z: z, X: i, Y: j})
+					consumer(&Tile{Z: z, X: x, Y: y})
 				}
 			}
 		}

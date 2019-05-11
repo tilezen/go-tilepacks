@@ -149,7 +149,7 @@ func main() {
 	gzipEnabled := flag.Bool("gzip", false, "Request gzip encoding from server and store gzipped contents in mbtiles. Will gzip locally if server doesn't do it.")
 	requestTimeout := flag.Int("timeout", 60, "HTTP client timeout for tile requests.")
 	cpuProfile := flag.String("cpuprofile", "", "Enables CPU profiling. Saves the dump to the given path.")
-	invertedY := flag.Bool("inverted-y", false, "...")
+	invertedY := flag.Bool("inverted-y", false, "Invert the Y-value of tiles to match the TMS (as opposed to ZXY) tile format.")
 	flag.Parse()
 
 	if *cpuProfile != "" {
@@ -250,7 +250,7 @@ func main() {
 		}
 	}
 
-	opts := tilepack.GenerateTilesOptions{
+	opts := &tilepack.GenerateTilesOptions{
 		Bounds:       bounds,
 		Zooms:        zooms,
 		ConsumerFunc: consumer,
