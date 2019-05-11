@@ -153,6 +153,7 @@ func main() {
 	gzipEnabled := flag.Bool("gzip", false, "Request gzip encoding from server and store gzipped contents in mbtiles. Will gzip locally if server doesn't do it.")
 	requestTimeout := flag.Int("timeout", 60, "HTTP client timeout for tile requests.")
 	cpuProfile := flag.String("cpuprofile", "", "Enables CPU profiling. Saves the dump to the given path.")
+	invertedY := flag.Bool("inverted-y", false, "Invert the Y-value of tiles to match the TMS (as opposed to ZXY) tile format.")
 	flag.Parse()
 
 	if *cpuProfile != "" {
@@ -240,8 +241,7 @@ func main() {
 	resultWG.Add(1)
 	go processResults(resultWG, results, mbtilesOutputter)
 
-	// Add tile request jobs
-	tilepack.GenerateTiles(bounds, zooms, func(tile *tilepack.Tile) {
+	consumer := func(tile *tilepack.Tile) {
 		url := strings.NewReplacer(
 			"{x}", fmt.Sprintf("%d", tile.X),
 			"{y}", fmt.Sprintf("%d", tile.Y),
@@ -252,7 +252,17 @@ func main() {
 			Tile: tile,
 			Gzip: *gzipEnabled,
 		}
-	})
+	}
+
+	opts := &tilepack.GenerateTilesOptions{
+		Bounds:       bounds,
+		Zooms:        zooms,
+		ConsumerFunc: consumer,
+		InvertedY:    *invertedY,
+	}
+
+	// Add tile request jobs
+	tilepack.GenerateTiles(opts)
 	close(jobs)
 	log.Print("Job queue closed")
 
