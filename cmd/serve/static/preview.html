@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Nextzen Tangram Demo</title>
+    <link rel="stylesheet" href="https://www.nextzen.org/js/nextzen.css" />
+    <script type="text/javascript" src="https://www.nextzen.org/js/nextzen.min.js"></script>
+
+    <style>
+        body {
+            margin: 0px;
+            border: 0px;
+            padding: 0px;
+        }
+
+        #map {
+            height: 100%;
+            width: 100%;
+            position: absolute;
+        }
+
+    </style>
+  </head>
+
+  <body>
+    <div id="map"></div>
+
+    <script>
+
+        var map = L.Nextzen.map('map', {apiKey: 'abc123',attribution: '<a href="https://github.com/tangrams" target="_blank">Tangram</a> | <a href="http://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a> | <a href="https://www.nextzen.org/" target="_blank">Nextzen</a>',
+            tangramOptions: {
+                scene: {
+                    import: [
+                        'https://www.nextzen.org/carto/bubble-wrap-style/10/bubble-wrap-style.zip',
+                        'https://www.nextzen.org/carto/bubble-wrap-style/10/themes/bubble-wrap-road-shields-usa.zip',
+                        'https://www.nextzen.org/carto/bubble-wrap-style/10/themes/bubble-wrap-road-shields-international.zip',
+                        'https://www.nextzen.org/carto/bubble-wrap-style/10/themes/label-10.zip'
+                    ],
+                    sources: {
+                        mapzen: {
+                            url: '/tilezen/vector/v1/512/all/{z}/{x}/{y}.mvt',
+                            tile_size: 512,
+                            max_zoom: 16
+                        }
+                    }
+                }
+            }
+        });
+        map.setView([33.0, -12.3], 2);
+        L.Nextzen.hash({map: map});
+
+    </script>
+
+  </body>
+</html>
