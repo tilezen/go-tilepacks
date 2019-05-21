@@ -12,4 +12,6 @@
 *.out
 
 dist
+bin
 .DS_Store
+*~
