@@ -8,8 +8,9 @@ import (
 )
 
 type diskOutputter struct {
+	TileOutputter
 	root     string
-	format	string
+	format   string
 	hasTiles bool
 }
 
@@ -24,10 +25,10 @@ func NewDiskOutputter(dsn string) (*diskOutputter, error) {
 	}
 
 	o := diskOutputter{
-		root: root,
+		root:   root,
 		format: format,
 	}
-	
+
 	return &o, nil
 }
 

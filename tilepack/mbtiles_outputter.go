@@ -22,6 +22,7 @@ func NewMbtilesOutputter(dsn string) (*mbtilesOutputter, error) {
 }
 
 type mbtilesOutputter struct {
+	TileOutputter
 	db         *sql.DB
 	txn        *sql.Tx
 	batchCount int

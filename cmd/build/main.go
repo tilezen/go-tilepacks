@@ -146,6 +146,7 @@ func processResults(waitGroup *sync.WaitGroup, results chan *TileResponse, proce
 
 func main() {
 	urlTemplateStr := flag.String("url", "", "URL template to make tile requests with.")
+	outputMode := flag.String("mode", "mbtiles", "...")
 	outputStr := flag.String("output", "", "Path to output mbtiles file.")
 	boundingBoxStr := flag.String("bounds", "-90.0,-180.0,90.0,180.0", "Comma-separated bounding box in south,west,north,east format. Defaults to the whole world.")
 	zoomsStr := flag.String("zooms", "0,1,2,3,4,5,6,7,8,9,10", "Comma-separated list of zoom levels.")
@@ -218,12 +219,23 @@ func main() {
 	}
 	httpClient.Transport = httpTransport
 
-	mbtilesOutputter, err := tilepack.NewMbtilesOutputter(*outputStr)
-	if err != nil {
-		log.Fatalf("Couldn't create mbtiles output: %+v", err)
+	var outputter tilepack.TileOutputter
+	var outputter_err error
+
+	switch *outputMode {
+	case "disk":
+		outputter, outputter_err = tilepack.NewDiskOutputter(*outputMode)
+	case "mbtiles":
+		outputter, outputter_err = tilepack.NewMbtilesOutputter(*outputMode)
+	default:
+		log.Fatalf("Unknown outputter: %s", *outputMode)
 	}
 
-	mbtilesOutputter.CreateTiles()
+	if outputter_err != nil {
+		log.Fatalf("Couldn't create mbtiles output: %+v", outputter_err)
+	}
+
+	outputter.CreateTiles()
 	log.Println("Created mbtiles output")
 
 	jobs := make(chan *TileRequest, 2000)
@@ -239,7 +251,7 @@ func main() {
 	// Start the worker that receives data from HTTP workers
 	resultWG := &sync.WaitGroup{}
 	resultWG.Add(1)
-	go processResults(resultWG, results, mbtilesOutputter)
+	go processResults(resultWG, results, outputter)
 
 	consumer := func(tile *tilepack.Tile) {
 		url := strings.NewReplacer(
