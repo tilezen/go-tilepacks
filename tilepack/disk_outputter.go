@@ -3,6 +3,8 @@ package tilepack
 import (
 	"errors"
 	"fmt"
+	"github.com/aaronland/go-string/dsn"
+	_ "log"
 	"os"
 	"path/filepath"
 )
@@ -14,19 +16,23 @@ type diskOutputter struct {
 	hasTiles bool
 }
 
-func NewDiskOutputter(dsn string) (*diskOutputter, error) {
+func NewDiskOutputter(dsn_str string) (*diskOutputter, error) {
 
-	format := "svg" // FIX ME
+	dsn_map, err := dsn.StringToDSNWithKeys(dsn_str, "root", "format")
 
-	root, err := filepath.Abs(dsn)
-
+	if err != nil {
+		return nil, err
+	}
+	
+	abs_root, err := filepath.Abs(dsn_map["root"])
+	
 	if err != nil {
 		return nil, err
 	}
 
 	o := diskOutputter{
-		root:   root,
-		format: format,
+		root:   abs_root,
+		format: dsn_map["format"],
 	}
 
 	return &o, nil

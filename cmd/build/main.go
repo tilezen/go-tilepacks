@@ -146,8 +146,9 @@ func processResults(waitGroup *sync.WaitGroup, results chan *TileResponse, proce
 
 func main() {
 	urlTemplateStr := flag.String("url", "", "URL template to make tile requests with.")
-	outputMode := flag.String("mode", "mbtiles", "...")
-	outputStr := flag.String("output", "", "Path to output mbtiles file.")
+	outputMode := flag.String("mode", "mbtiles", "Valid modes are: disk, mbtiles.")
+	outputStr := flag.String("output", "", "Path, or DSN string, to output files. DEPRECATED - please use -dsn instead.")
+	outputDSN := flag.String("dsn", "", "Path, or DSN string, to output files.")	
 	boundingBoxStr := flag.String("bounds", "-90.0,-180.0,90.0,180.0", "Comma-separated bounding box in south,west,north,east format. Defaults to the whole world.")
 	zoomsStr := flag.String("zooms", "0,1,2,3,4,5,6,7,8,9,10", "Comma-separated list of zoom levels.")
 	numHTTPWorkers := flag.Int("workers", 25, "Number of HTTP client workers to use.")
@@ -157,6 +158,10 @@ func main() {
 	invertedY := flag.Bool("inverted-y", false, "Invert the Y-value of tiles to match the TMS (as opposed to ZXY) tile format.")
 	flag.Parse()
 
+	if *outputDSN == "" {
+		*outputDSN = *outputStr
+	}
+	
 	if *cpuProfile != "" {
 		f, err := os.Create(*cpuProfile)
 		if err != nil {
@@ -169,8 +174,8 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
-	if *outputStr == "" {
-		log.Fatalf("Output path is required")
+	if *outputDSN == "" {
+		log.Fatalf("Output DSN (-dsn) is required")
 	}
 
 	if *urlTemplateStr == "" {
@@ -224,19 +229,24 @@ func main() {
 
 	switch *outputMode {
 	case "disk":
-		outputter, outputter_err = tilepack.NewDiskOutputter(*outputMode)
+		outputter, outputter_err = tilepack.NewDiskOutputter(*outputDSN)
 	case "mbtiles":
-		outputter, outputter_err = tilepack.NewMbtilesOutputter(*outputMode)
+		outputter, outputter_err = tilepack.NewMbtilesOutputter(*outputDSN)
 	default:
 		log.Fatalf("Unknown outputter: %s", *outputMode)
 	}
 
 	if outputter_err != nil {
-		log.Fatalf("Couldn't create mbtiles output: %+v", outputter_err)
+		log.Fatalf("Couldn't create %s output: %+v", *outputMode, outputter_err)
 	}
 
-	outputter.CreateTiles()
-	log.Println("Created mbtiles output")
+	err := outputter.CreateTiles()
+
+	if err != nil {
+		log.Fatalf("Failed to create %s output: %+v", *outputMode, err)
+	}
+	
+	log.Printf("Created %s output\n", *outputMode)
 
 	jobs := make(chan *TileRequest, 2000)
 	results := make(chan *TileResponse, 2000)
