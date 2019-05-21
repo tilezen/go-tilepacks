@@ -1,6 +1,6 @@
 # go-tilepacks
 
-A Go-based tile downloader that saves to deduplicated mbtiles files.
+A Go-based tile downloader that saves to deduplicated files.
 
 ## Tools
 
