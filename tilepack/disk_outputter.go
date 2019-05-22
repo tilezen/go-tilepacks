@@ -96,11 +96,10 @@ func (o *diskOutputter) Save(tile *Tile, data []byte) error {
 		return err
 	}
 
-	defer fh.Close()
-
 	_, err = fh.Write(data)
 
 	if err != nil {
+		fh.Close()
 		return err
 	}
 

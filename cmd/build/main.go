@@ -147,7 +147,6 @@ func processResults(waitGroup *sync.WaitGroup, results chan *TileResponse, proce
 func main() {
 	urlTemplateStr := flag.String("url", "", "URL template to make tile requests with.")
 	outputMode := flag.String("mode", "mbtiles", "Valid modes are: disk, mbtiles.")
-	outputStr := flag.String("output", "", "Path, or DSN string, to output files. DEPRECATED - please use -dsn instead.")
 	outputDSN := flag.String("dsn", "", "Path, or DSN string, to output files.")	
 	boundingBoxStr := flag.String("bounds", "-90.0,-180.0,90.0,180.0", "Comma-separated bounding box in south,west,north,east format. Defaults to the whole world.")
 	zoomsStr := flag.String("zooms", "0,1,2,3,4,5,6,7,8,9,10", "Comma-separated list of zoom levels.")
@@ -158,10 +157,6 @@ func main() {
 	invertedY := flag.Bool("inverted-y", false, "Invert the Y-value of tiles to match the TMS (as opposed to ZXY) tile format.")
 	flag.Parse()
 
-	if *outputDSN == "" {
-		*outputDSN = *outputStr
-	}
-	
 	if *cpuProfile != "" {
 		f, err := os.Create(*cpuProfile)
 		if err != nil {
