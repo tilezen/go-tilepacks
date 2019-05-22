@@ -21,8 +21,6 @@ Usage of ./bin/build:
     	Invert the Y-value of tiles to match the TMS (as opposed to ZXY) tile format.
   -mode string
     	Valid modes are: disk, mbtiles. (default "mbtiles")
-  -output string
-    	Path, or DSN string, to output files. DEPRECATED - please use -dsn instead.
   -timeout int
     	HTTP client timeout for tile requests. (default 60)
   -url string
