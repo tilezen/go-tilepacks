@@ -1,15 +1,8 @@
 package main
 
 import (
-	"bytes"
-	"compress/gzip"
 	"flag"
-	"fmt"
-	"io"
-	"io/ioutil"
 	"log"
-	"math/rand"
-	"net/http"
 	"os"
 	"runtime/pprof"
 	"strconv"
@@ -20,128 +13,11 @@ import (
 	"github.com/tilezen/go-tilepacks/tilepack"
 )
 
-type TileRequest struct {
-	Tile *tilepack.Tile
-	URL  string
-	Gzip bool
-}
-
-type TileResponse struct {
-	Tile    *tilepack.Tile
-	Data    []byte
-	Elapsed float64
-}
-
 const (
-	httpUserAgent   = "go-tilepacks/1.0"
 	saveLogInterval = 10000
 )
 
-func doHTTPWithRetry(client *http.Client, request *http.Request, nRetries int) (*http.Response, error) {
-	sleep := 500 * time.Millisecond
-
-	for i := 0; i < nRetries; i++ {
-		resp, err := client.Do(request)
-		if err != nil {
-			return nil, err
-		}
-
-		if resp.StatusCode == 200 {
-			return resp, nil
-		}
-
-		// log.Printf("Failed to GET (try %d) %+v: %+v", i, request.URL, resp.Status)
-		if resp.StatusCode > 500 && resp.StatusCode < 600 {
-			time.Sleep(sleep)
-			sleep *= 2.0
-			if sleep > 30.0 {
-				sleep = 30 * time.Second
-			}
-		}
-	}
-
-	return nil, fmt.Errorf("ran out of HTTP GET retries for %s", request.URL)
-}
-
-func httpWorker(wg *sync.WaitGroup, id int, client *http.Client, jobs chan *TileRequest, results chan *TileResponse) {
-	defer wg.Done()
-
-	// Instantiate the gzip support stuff once instead on every iteration
-	bodyBuffer := bytes.NewBuffer(nil)
-	bodyGzipper := gzip.NewWriter(bodyBuffer)
-
-	for request := range jobs {
-		start := time.Now()
-
-		httpReq, err := http.NewRequest("GET", request.URL, nil)
-		if err != nil {
-			log.Printf("Unable to create HTTP request: %+v", err)
-			continue
-		}
-
-		httpReq.Header.Add("User-Agent", httpUserAgent)
-		if request.Gzip {
-			httpReq.Header.Add("Accept-Encoding", "gzip")
-		}
-
-		resp, err := doHTTPWithRetry(client, httpReq, 30)
-		if err != nil {
-			log.Printf("Skipping %+v: %+v", request, err)
-			continue
-		}
-
-		var bodyData []byte
-		if request.Gzip {
-			contentEncoding := resp.Header.Get("Content-Encoding")
-			if contentEncoding == "gzip" {
-				bodyData, err = ioutil.ReadAll(resp.Body)
-			} else {
-				// Reset at the top in case we ran into a continue below
-				bodyBuffer.Reset()
-				bodyGzipper.Reset(bodyBuffer)
-
-				_, err = io.Copy(bodyGzipper, resp.Body)
-				if err != nil {
-					log.Printf("Couldn't copy to gzipper: %+v", err)
-					continue
-				}
-
-				err = bodyGzipper.Flush()
-				if err != nil {
-					log.Printf("Couldn't flush gzipper: %+v", err)
-					continue
-				}
-
-				bodyData, err = ioutil.ReadAll(bodyBuffer)
-				if err != nil {
-					log.Printf("Couldn't read bytes into byte array: %+v", err)
-					continue
-				}
-			}
-		} else {
-			bodyData, err = ioutil.ReadAll(resp.Body)
-		}
-		resp.Body.Close()
-
-		if err != nil {
-			log.Printf("Error copying bytes from HTTP response: %+v", err)
-			continue
-		}
-
-		secs := time.Since(start).Seconds()
-
-		results <- &TileResponse{
-			Tile:    request.Tile,
-			Data:    bodyData,
-			Elapsed: secs,
-		}
-
-		// Sleep a tiny bit to try to prevent thundering herd
-		time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond)
-	}
-}
-
-func processResults(waitGroup *sync.WaitGroup, results chan *TileResponse, processor tilepack.TileOutputter) {
+func processResults(waitGroup *sync.WaitGroup, results chan *tilepack.TileResponse, processor tilepack.TileOutputter) {
 	defer waitGroup.Done()
 
 	start := time.Now()
@@ -170,15 +46,16 @@ func processResults(waitGroup *sync.WaitGroup, results chan *TileResponse, proce
 }
 
 func main() {
+	generatorStr := flag.String("generator", "xyz", "Which tile fetcher to use. Options are xyz, metatile, tapalcatl2.")
 	urlTemplateStr := flag.String("url", "", "URL template to make tile requests with.")
 	outputStr := flag.String("output", "", "Path to output mbtiles file.")
 	boundingBoxStr := flag.String("bounds", "-90.0,-180.0,90.0,180.0", "Comma-separated bounding box in south,west,north,east format. Defaults to the whole world.")
 	zoomsStr := flag.String("zooms", "0,1,2,3,4,5,6,7,8,9,10", "Comma-separated list of zoom levels.")
-	numHTTPWorkers := flag.Int("workers", 25, "Number of HTTP client workers to use.")
-	gzipEnabled := flag.Bool("gzip", false, "Request gzip encoding from server and store gzipped contents in mbtiles. Will gzip locally if server doesn't do it.")
+	numTileFetchWorkers := flag.Int("workers", 25, "Number of tile fetch workers to use.")
 	requestTimeout := flag.Int("timeout", 60, "HTTP client timeout for tile requests.")
 	cpuProfile := flag.String("cpuprofile", "", "Enables CPU profiling. Saves the dump to the given path.")
 	invertedY := flag.Bool("inverted-y", false, "Invert the Y-value of tiles to match the TMS (as opposed to ZXY) tile format.")
+	materializedZoomsStr := flag.String("materialized-zooms", "", "(For tapalcatl2 generator) Specifies the materialized zooms for t2 archives.")
 	flag.Parse()
 
 	if *cpuProfile != "" {
@@ -234,14 +111,28 @@ func main() {
 		zooms[i] = uint(z)
 	}
 
-	// Configure the HTTP client with a timeout and connection pools
-	httpClient := &http.Client{}
-	httpClient.Timeout = time.Duration(*requestTimeout) * time.Second
-	httpTransport := &http.Transport{
-		MaxIdleConnsPerHost: 500,
-		DisableCompression:  true,
+	var jobCreator tilepack.JobGenerator
+	var err error
+	switch *generatorStr {
+	case "xyz":
+		jobCreator, err = tilepack.NewXYZJobGenerator(*urlTemplateStr, bounds, zooms, time.Duration(*requestTimeout)*time.Second, *invertedY)
+	// case "metatile":
+	// 	jobCreator, err = tilepack.NewMetatileJobGenerator(*urlTemplateStr, bounds, zooms)
+	case "tapalcatl2":
+		materializedZoomsStrSplit := strings.Split(*materializedZoomsStr, ",")
+		materializedZooms := make([]uint, len(materializedZoomsStrSplit))
+		for i, materializedZoomStr := range materializedZoomsStrSplit {
+			z, err := strconv.ParseUint(materializedZoomStr, 10, 32)
+			if err != nil {
+				log.Fatalf("Materialized zoom list could not be parsed: %+v", err)
+			}
+			materializedZooms[i] = uint(z)
+		}
+
+		jobCreator, err = tilepack.NewTapalcatl2JobGenerator(*urlTemplateStr, bounds, zooms, materializedZooms)
+	default:
+		log.Fatalf("Unknown job generator type %s", *generatorStr)
 	}
-	httpClient.Transport = httpTransport
 
 	mbtilesOutputter, err := tilepack.NewMbtilesOutputter(*outputStr)
 	if err != nil {
@@ -251,14 +142,22 @@ func main() {
 	mbtilesOutputter.CreateTiles()
 	log.Println("Created mbtiles output")
 
-	jobs := make(chan *TileRequest, 2000)
-	results := make(chan *TileResponse, 2000)
+	jobs := make(chan *tilepack.TileRequest, 2000)
+	results := make(chan *tilepack.TileResponse, 2000)
 
 	// Start up the HTTP workers that will fetch tiles
 	workerWG := &sync.WaitGroup{}
-	for w := 0; w < *numHTTPWorkers; w++ {
-		workerWG.Add(1)
-		go httpWorker(workerWG, w, httpClient, jobs, results)
+	for w := 0; w < *numTileFetchWorkers; w++ {
+		worker, err := jobCreator.CreateWorker()
+		if err != nil {
+			log.Fatalf("Couldn't create %s worker: %+v", *generatorStr, err)
+		}
+
+		go func() {
+			workerWG.Add(1)
+			defer workerWG.Done()
+			worker(w, jobs, results)
+		}()
 	}
 
 	// Start the worker that receives data from HTTP workers
@@ -266,28 +165,9 @@ func main() {
 	resultWG.Add(1)
 	go processResults(resultWG, results, mbtilesOutputter)
 
-	consumer := func(tile *tilepack.Tile) {
-		url := strings.NewReplacer(
-			"{x}", fmt.Sprintf("%d", tile.X),
-			"{y}", fmt.Sprintf("%d", tile.Y),
-			"{z}", fmt.Sprintf("%d", tile.Z)).Replace(*urlTemplateStr)
-
-		jobs <- &TileRequest{
-			URL:  url,
-			Tile: tile,
-			Gzip: *gzipEnabled,
-		}
-	}
-
-	opts := &tilepack.GenerateTilesOptions{
-		Bounds:       bounds,
-		Zooms:        zooms,
-		ConsumerFunc: consumer,
-		InvertedY:    *invertedY,
-	}
+	jobCreator.CreateJobs(jobs)
 
 	// Add tile request jobs
-	tilepack.GenerateTiles(opts)
 	close(jobs)
 	log.Print("Job queue closed")
 
