@@ -47,7 +47,6 @@ func processResults(waitGroup *sync.WaitGroup, results chan *tilepack.TileRespon
 
 func main() {
 	generatorStr := flag.String("generator", "xyz", "Which tile fetcher to use. Options are xyz, metatile, tapalcatl2.")
-	urlTemplateStr := flag.String("url", "", "URL template to make tile requests with.")
 	outputStr := flag.String("output", "", "Path to output mbtiles file.")
 	boundingBoxStr := flag.String("bounds", "-90.0,-180.0,90.0,180.0", "Comma-separated bounding box in south,west,north,east format. Defaults to the whole world.")
 	zoomsStr := flag.String("zooms", "0,1,2,3,4,5,6,7,8,9,10", "Comma-separated list of zoom levels.")
@@ -55,6 +54,10 @@ func main() {
 	requestTimeout := flag.Int("timeout", 60, "HTTP client timeout for tile requests.")
 	cpuProfile := flag.String("cpuprofile", "", "Enables CPU profiling. Saves the dump to the given path.")
 	invertedY := flag.Bool("inverted-y", false, "Invert the Y-value of tiles to match the TMS (as opposed to ZXY) tile format.")
+	urlTemplateStr := flag.String("url-template", "", "(For xyz generator) URL template to make tile requests with.")
+	layerNameStr := flag.String("layer-name", "", "(For tapalcatl2 generator) The layer name to use for hash building.")
+	pathTemplateStr := flag.String("path-template", "", "(For tapalcatl2 generator) The template to use for the path part of the S3 path to the t2 archive.")
+	bucketStr := flag.String("bucket", "", "(For tapalcatl2 generator) The name of the S3 bucket to request t2 archives from.")
 	materializedZoomsStr := flag.String("materialized-zooms", "", "(For tapalcatl2 generator) Specifies the materialized zooms for t2 archives.")
 	flag.Parse()
 
@@ -72,10 +75,6 @@ func main() {
 
 	if *outputStr == "" {
 		log.Fatalf("Output path is required")
-	}
-
-	if *urlTemplateStr == "" {
-		log.Fatalf("URL template is required")
 	}
 
 	boundingBoxStrSplit := strings.Split(*boundingBoxStr, ",")
@@ -115,10 +114,30 @@ func main() {
 	var err error
 	switch *generatorStr {
 	case "xyz":
+		if *urlTemplateStr == "" {
+			log.Fatalf("URL template is required")
+		}
+
 		jobCreator, err = tilepack.NewXYZJobGenerator(*urlTemplateStr, bounds, zooms, time.Duration(*requestTimeout)*time.Second, *invertedY)
 	// case "metatile":
 	// 	jobCreator, err = tilepack.NewMetatileJobGenerator(*urlTemplateStr, bounds, zooms)
 	case "tapalcatl2":
+		if *bucketStr == "" {
+			log.Fatalf("Bucket name is required")
+		}
+
+		if *pathTemplateStr == "" {
+			log.Fatalf("Path template is required")
+		}
+
+		if *materializedZoomsStr == "" {
+			log.Fatalf("Materialized zoom list is required")
+		}
+
+		if *layerNameStr == "" {
+			log.Fatalf("layerNameStr is required")
+		}
+
 		materializedZoomsStrSplit := strings.Split(*materializedZoomsStr, ",")
 		materializedZooms := make([]uint, len(materializedZoomsStrSplit))
 		for i, materializedZoomStr := range materializedZoomsStrSplit {
@@ -129,7 +148,7 @@ func main() {
 			materializedZooms[i] = uint(z)
 		}
 
-		jobCreator, err = tilepack.NewTapalcatl2JobGenerator(*urlTemplateStr, bounds, zooms, materializedZooms)
+		jobCreator, err = tilepack.NewTapalcatl2JobGenerator(*bucketStr, *pathTemplateStr, *layerNameStr, materializedZooms, zooms, bounds)
 	default:
 		log.Fatalf("Unknown job generator type %s", *generatorStr)
 	}

@@ -33,6 +33,13 @@ type LngLatBbox struct {
 	West, South, East, North float64
 }
 
+// Intersects returns true if this bounding box intersects with the other bounding box.
+func (b *LngLatBbox) Intersects(o *LngLatBbox) bool {
+	latOverlaps := (o.North > b.South) && (o.South < b.North)
+	lngOverlaps := (o.East > b.West) && (o.West < b.East)
+	return latOverlaps && lngOverlaps
+}
+
 //Bbox holds Spherical Mercator bounding box of a tile
 type Bbox struct {
 	Left, Bottom, Right, Top float64
