@@ -3,6 +3,7 @@ package tilepack
 import (
 	"archive/zip"
 	"bytes"
+	"compress/gzip"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
@@ -58,6 +59,10 @@ type metatileJobGenerator struct {
 
 func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, results chan *TileResponse), error) {
 	f := func(id int, jobs chan *TileRequest, results chan *TileResponse) {
+		// Instantiate the gzip support stuff once instead on every iteration
+		bodyBuffer := bytes.NewBuffer(nil)
+		bodyGzipper := gzip.NewWriter(bodyBuffer)
+
 		for request := range jobs {
 			// Download the metatile archive zip to a byte buffer
 			compressedBytes := &aws.WriteAtBuffer{}
@@ -92,7 +97,7 @@ func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileReque
 					Y: request.Tile.Y + offsetY,
 				}
 
-				if !zoomIsWanted(t.Z, x.zooms) {
+				if !arrayContains(t.Z, x.zooms) {
 					continue
 				}
 
@@ -111,8 +116,36 @@ func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileReque
 					log.Fatalf("Couldn't read zf %s: %+v", zf.Name, err)
 				}
 
+				log.Printf("Extracted %d bytes for offset %d/%d/%d, meta %d/%d/%d",
+					len(b),
+					offsetZ, offsetX, offsetY,
+					request.Tile.Z, request.Tile.X, request.Tile.Y,
+				)
+
+				// Gzip the data
+				bodyBuffer.Reset()
+				bodyGzipper.Reset(bodyBuffer)
+
+				_, err = bodyGzipper.Write(b)
+				if err != nil {
+					log.Printf("Couldn't write to gzipper: %+v", err)
+					continue
+				}
+
+				err = bodyGzipper.Flush()
+				if err != nil {
+					log.Printf("Couldn't flush gzipper: %+v", err)
+					continue
+				}
+
+				bodyData, err := ioutil.ReadAll(bodyBuffer)
+				if err != nil {
+					log.Printf("Couldn't read bytes into byte array: %+v", err)
+					continue
+				}
+
 				results <- &TileResponse{
-					Data: b,
+					Data: bodyData,
 					Tile: t,
 				}
 			}
@@ -127,9 +160,10 @@ func (x *metatileJobGenerator) CreateJobs(jobs chan *TileRequest) error {
 	tileZoom := log2Uint(tileScale)
 	deltaZoom := int(metaZoom) - int(tileZoom)
 
-	// Iterate over the list of requested zooms
+	// Convert the list of requested zooms into a list of zooms where metatiles are
+	metatileZooms := []uint{}
+
 	for _, z := range x.zooms {
-		// Calculate the metatile zoom for this requested zoom
 		var metatileZoom uint
 		if int(z) < deltaZoom {
 			metatileZoom = 0
@@ -137,29 +171,33 @@ func (x *metatileJobGenerator) CreateJobs(jobs chan *TileRequest) error {
 			metatileZoom = z - uint(deltaZoom)
 		}
 
-		// Generate requests for tiles in the bounding box at this metatile zoom
-		GenerateTiles(&GenerateTilesOptions{
-			Bounds:    x.bounds,
-			InvertedY: false,
-			Zooms:     []uint{metatileZoom},
-			ConsumerFunc: func(t *Tile) {
-				hash := md5.Sum([]byte(fmt.Sprintf("%d/%d/%d.zip", t.Z, t.X, t.Y)))
-				hashHex := hex.EncodeToString(hash[:])
-
-				path := strings.NewReplacer(
-					"{x}", fmt.Sprintf("%d", t.X),
-					"{y}", fmt.Sprintf("%d", t.Y),
-					"{z}", fmt.Sprintf("%d", t.Z),
-					"{l}", x.layerName,
-					"{h}", hashHex[:5]).Replace(x.pathTemplate)
-
-				jobs <- &TileRequest{
-					Tile: t,
-					URL:  path,
-				}
-			},
-		})
+		if !arrayContains(metatileZoom, metatileZooms) {
+			metatileZooms = append(metatileZooms, metatileZoom)
+		}
 	}
+
+	// Generate requests for metatiles in the bounding box
+	GenerateTiles(&GenerateTilesOptions{
+		Bounds:    x.bounds,
+		InvertedY: false,
+		Zooms:     metatileZooms,
+		ConsumerFunc: func(t *Tile) {
+			hash := md5.Sum([]byte(fmt.Sprintf("%d/%d/%d.zip", t.Z, t.X, t.Y)))
+			hashHex := hex.EncodeToString(hash[:])
+
+			path := strings.NewReplacer(
+				"{x}", fmt.Sprintf("%d", t.X),
+				"{y}", fmt.Sprintf("%d", t.Y),
+				"{z}", fmt.Sprintf("%d", t.Z),
+				"{l}", x.layerName,
+				"{h}", hashHex[:5]).Replace(x.pathTemplate)
+
+			jobs <- &TileRequest{
+				Tile: t,
+				URL:  path,
+			}
+		},
+	})
 
 	return nil
 }

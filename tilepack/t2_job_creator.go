@@ -47,9 +47,9 @@ type tapalcatl2JobGenerator struct {
 	zooms             []uint
 }
 
-func zoomIsWanted(wantedZ uint, zooms []uint) bool {
-	for _, z := range zooms {
-		if z == wantedZ {
+func arrayContains(needle uint, haystack []uint) bool {
+	for _, z := range haystack {
+		if z == needle {
 			return true
 		}
 	}
@@ -86,7 +86,7 @@ func (x *tapalcatl2JobGenerator) CreateWorker() (func(id int, jobs chan *TileReq
 
 				t := &Tile{Z: tileZ, X: tileX, Y: tileY}
 
-				if !zoomIsWanted(tileZ, x.zooms) {
+				if !arrayContains(tileZ, x.zooms) {
 					continue
 				}
 
