@@ -55,9 +55,9 @@ func main() {
 	cpuProfile := flag.String("cpuprofile", "", "Enables CPU profiling. Saves the dump to the given path.")
 	invertedY := flag.Bool("inverted-y", false, "Invert the Y-value of tiles to match the TMS (as opposed to ZXY) tile format.")
 	urlTemplateStr := flag.String("url-template", "", "(For xyz generator) URL template to make tile requests with.")
-	layerNameStr := flag.String("layer-name", "", "(For tapalcatl2 generator) The layer name to use for hash building.")
-	pathTemplateStr := flag.String("path-template", "", "(For tapalcatl2 generator) The template to use for the path part of the S3 path to the t2 archive.")
-	bucketStr := flag.String("bucket", "", "(For tapalcatl2 generator) The name of the S3 bucket to request t2 archives from.")
+	layerNameStr := flag.String("layer-name", "", "(For metatile, tapalcatl2 generator) The layer name to use for hash building.")
+	pathTemplateStr := flag.String("path-template", "", "(For metatile, tapalcatl2 generator) The template to use for the path part of the S3 path to the t2 archive.")
+	bucketStr := flag.String("bucket", "", "(For metatile, tapalcatl2 generator) The name of the S3 bucket to request t2 archives from.")
 	materializedZoomsStr := flag.String("materialized-zooms", "", "(For tapalcatl2 generator) Specifies the materialized zooms for t2 archives.")
 	flag.Parse()
 
@@ -119,8 +119,23 @@ func main() {
 		}
 
 		jobCreator, err = tilepack.NewXYZJobGenerator(*urlTemplateStr, bounds, zooms, time.Duration(*requestTimeout)*time.Second, *invertedY)
-	// case "metatile":
-	// 	jobCreator, err = tilepack.NewMetatileJobGenerator(*urlTemplateStr, bounds, zooms)
+	case "metatile":
+		if *bucketStr == "" {
+			log.Fatalf("Bucket name is required")
+		}
+
+		if *pathTemplateStr == "" {
+			log.Fatalf("Path template is required")
+		}
+
+		if *layerNameStr == "" {
+			log.Fatalf("layerNameStr is required")
+		}
+
+		// TODO This should probably be configurable
+		metatileSize := uint(8)
+
+		jobCreator, err = tilepack.NewMetatileJobGenerator(*bucketStr, *pathTemplateStr, *layerNameStr, metatileSize, zooms, bounds)
 	case "tapalcatl2":
 		if *bucketStr == "" {
 			log.Fatalf("Bucket name is required")
