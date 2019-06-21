@@ -1,6 +1,7 @@
 package tilepack
 
 import (
+	"fmt"
 	"math"
 )
 
@@ -208,6 +209,11 @@ func (tile *Tile) Children() []*Tile {
 		{tile.X * 2, tile.Y*2 + 1, tile.Z + 1},
 	}
 	return kids
+}
+
+// ToString returns a string representation of the tile.
+func (tile *Tile) ToString() string {
+	return fmt.Sprintf("{%d/%d/%d}", tile.Z, tile.X, tile.Y)
 }
 
 //ToXY transforms WGS84 DD to Spherical Mercator meters

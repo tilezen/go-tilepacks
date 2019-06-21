@@ -63,15 +63,15 @@ func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileReque
 		bodyBuffer := bytes.NewBuffer(nil)
 		bodyGzipper := gzip.NewWriter(bodyBuffer)
 
-		for request := range jobs {
+		for metaTileRequest := range jobs {
 			// Download the metatile archive zip to a byte buffer
 			compressedBytes := &aws.WriteAtBuffer{}
 			numBytes, err := x.s3Client.Download(compressedBytes, &s3.GetObjectInput{
 				Bucket: aws.String(x.bucket),
-				Key:    aws.String(request.URL),
+				Key:    aws.String(metaTileRequest.URL),
 			})
 			if err != nil {
-				log.Fatalf("Unable to download item %s: %+v", request.URL, err)
+				log.Fatalf("Unable to download item %s: %+v", metaTileRequest.URL, err)
 			}
 
 			// Uncompress the archive
@@ -79,7 +79,7 @@ func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileReque
 			readBytesReader := bytes.NewReader(readBytes)
 			zippedReader, err := zip.NewReader(readBytesReader, numBytes)
 			if err != nil {
-				log.Fatalf("Unable to unzip metatile archive %s: %+v", request.URL, err)
+				log.Fatalf("Unable to unzip metatile archive %s: %+v", metaTileRequest.URL, err)
 			}
 
 			// Iterate over the contents of the zip and add them as TileResponses
@@ -92,9 +92,9 @@ func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileReque
 
 				// Add the offset to metatile to get the actual tile
 				t := &Tile{
-					Z: request.Tile.Z + offsetZ,
-					X: request.Tile.X + offsetX,
-					Y: request.Tile.Y + offsetY,
+					Z: metaTileRequest.Tile.Z + offsetZ,
+					X: (metaTileRequest.Tile.X << offsetZ) + offsetX,
+					Y: (metaTileRequest.Tile.Y << offsetZ) + offsetY,
 				}
 
 				if !arrayContains(t.Z, x.zooms) {
@@ -150,16 +150,16 @@ func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileReque
 }
 
 func (x *metatileJobGenerator) CreateJobs(jobs chan *TileRequest) error {
-	metaZoom := log2Uint(x.metatileSize)
-	tileZoom := log2Uint(tileScale)
-	deltaZoom := int(metaZoom) - int(tileZoom)
-
 	// Convert the list of requested zooms into a list of zooms where metatiles are
 	metatileZooms := []uint{}
 
+	metaZoom := log2Uint(x.metatileSize)
+	tileZoom := log2Uint(tileScale)
+	deltaZoom := uint(metaZoom) - uint(tileZoom)
+
 	for _, z := range x.zooms {
 		var metatileZoom uint
-		if int(z) < deltaZoom {
+		if z < deltaZoom {
 			metatileZoom = 0
 		} else {
 			metatileZoom = z - uint(deltaZoom)
