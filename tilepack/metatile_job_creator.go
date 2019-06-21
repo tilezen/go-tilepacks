@@ -116,12 +116,6 @@ func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileReque
 					log.Fatalf("Couldn't read zf %s: %+v", zf.Name, err)
 				}
 
-				log.Printf("Extracted %d bytes for offset %d/%d/%d, meta %d/%d/%d",
-					len(b),
-					offsetZ, offsetX, offsetY,
-					request.Tile.Z, request.Tile.X, request.Tile.Y,
-				)
-
 				// Gzip the data
 				bodyBuffer.Reset()
 				bodyGzipper.Reset(bodyBuffer)
