@@ -71,7 +71,8 @@ func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileReque
 				Key:    aws.String(metaTileRequest.URL),
 			})
 			if err != nil {
-				log.Fatalf("Unable to download item %s: %+v", metaTileRequest.URL, err)
+				log.Printf("Unable to download item s3://%s/%s: %+v", x.bucket, metaTileRequest.URL, err)
+				continue
 			}
 
 			// Uncompress the archive
@@ -79,7 +80,8 @@ func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileReque
 			readBytesReader := bytes.NewReader(readBytes)
 			zippedReader, err := zip.NewReader(readBytesReader, numBytes)
 			if err != nil {
-				log.Fatalf("Unable to unzip metatile archive %s: %+v", metaTileRequest.URL, err)
+				log.Printf("Unable to unzip metatile archive %s: %+v", metaTileRequest.URL, err)
+				continue
 			}
 
 			// Iterate over the contents of the zip and add them as TileResponses
