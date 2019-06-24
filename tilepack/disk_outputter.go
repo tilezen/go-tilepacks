@@ -23,9 +23,9 @@ func NewDiskOutputter(dsn_str string) (*diskOutputter, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	abs_root, err := filepath.Abs(dsn_map["root"])
-	
+
 	if err != nil {
 		return nil, err
 	}
