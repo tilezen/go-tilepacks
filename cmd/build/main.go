@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"runtime/pprof"
@@ -36,6 +37,32 @@ const (
 	saveLogInterval = 10000
 )
 
+func doHTTPWithRetry(client *http.Client, request *http.Request, nRetries int) (*http.Response, error) {
+	sleep := 500 * time.Millisecond
+
+	for i := 0; i < nRetries; i++ {
+		resp, err := client.Do(request)
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.StatusCode == 200 {
+			return resp, nil
+		}
+
+		// log.Printf("Failed to GET (try %d) %+v: %+v", i, request.URL, resp.Status)
+		if resp.StatusCode > 500 && resp.StatusCode < 600 {
+			time.Sleep(sleep)
+			sleep *= 2.0
+			if sleep > 30.0 {
+				sleep = 30 * time.Second
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("ran out of HTTP GET retries for %s", request.URL)
+}
+
 func httpWorker(wg *sync.WaitGroup, id int, client *http.Client, jobs chan *TileRequest, results chan *TileResponse) {
 	defer wg.Done()
 
@@ -57,14 +84,9 @@ func httpWorker(wg *sync.WaitGroup, id int, client *http.Client, jobs chan *Tile
 			httpReq.Header.Add("Accept-Encoding", "gzip")
 		}
 
-		resp, err := client.Do(httpReq)
+		resp, err := doHTTPWithRetry(client, httpReq, 30)
 		if err != nil {
-			log.Printf("Error on HTTP request: %+v", err)
-			continue
-		}
-
-		if resp.StatusCode != 200 {
-			log.Printf("Failed to GET %+v: %+v", request.URL, resp.Status)
+			log.Printf("Skipping %+v: %+v", request, err)
 			continue
 		}
 
@@ -113,6 +135,9 @@ func httpWorker(wg *sync.WaitGroup, id int, client *http.Client, jobs chan *Tile
 			Data:    bodyData,
 			Elapsed: secs,
 		}
+
+		// Sleep a tiny bit to try to prevent thundering herd
+		time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond)
 	}
 }
 
