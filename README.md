@@ -19,7 +19,7 @@ Usage of ./bin/build:
     	Request gzip encoding from server and store gzipped contents in mbtiles. Will gzip locally if server doesn't do it.
   -inverted-y
     	Invert the Y-value of tiles to match the TMS (as opposed to ZXY) tile format.
-  -mode string
+  -output-mode string
     	Valid modes are: disk, mbtiles. (default "mbtiles")
   -timeout int
     	HTTP client timeout for tile requests. (default 60)
