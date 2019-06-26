@@ -171,7 +171,8 @@ func processResults(waitGroup *sync.WaitGroup, results chan *TileResponse, proce
 
 func main() {
 	urlTemplateStr := flag.String("url", "", "URL template to make tile requests with.")
-	outputStr := flag.String("output", "", "Path to output mbtiles file.")
+	outputMode := flag.String("output-mode", "mbtiles", "Valid modes are: disk, mbtiles.")
+	outputDSN := flag.String("dsn", "", "Path, or DSN string, to output files.")
 	boundingBoxStr := flag.String("bounds", "-90.0,-180.0,90.0,180.0", "Comma-separated bounding box in south,west,north,east format. Defaults to the whole world.")
 	zoomsStr := flag.String("zooms", "0,1,2,3,4,5,6,7,8,9,10", "Comma-separated list of zoom levels.")
 	numHTTPWorkers := flag.Int("workers", 25, "Number of HTTP client workers to use.")
@@ -193,8 +194,8 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
-	if *outputStr == "" {
-		log.Fatalf("Output path is required")
+	if *outputDSN == "" {
+		log.Fatalf("Output DSN (-dsn) is required")
 	}
 
 	if *urlTemplateStr == "" {
@@ -243,13 +244,29 @@ func main() {
 	}
 	httpClient.Transport = httpTransport
 
-	mbtilesOutputter, err := tilepack.NewMbtilesOutputter(*outputStr)
-	if err != nil {
-		log.Fatalf("Couldn't create mbtiles output: %+v", err)
+	var outputter tilepack.TileOutputter
+	var outputter_err error
+
+	switch *outputMode {
+	case "disk":
+		outputter, outputter_err = tilepack.NewDiskOutputter(*outputDSN)
+	case "mbtiles":
+		outputter, outputter_err = tilepack.NewMbtilesOutputter(*outputDSN)
+	default:
+		log.Fatalf("Unknown outputter: %s", *outputMode)
 	}
 
-	mbtilesOutputter.CreateTiles()
-	log.Println("Created mbtiles output")
+	if outputter_err != nil {
+		log.Fatalf("Couldn't create %s output: %+v", *outputMode, outputter_err)
+	}
+
+	err := outputter.CreateTiles()
+
+	if err != nil {
+		log.Fatalf("Failed to create %s output: %+v", *outputMode, err)
+	}
+
+	log.Printf("Created %s output\n", *outputMode)
 
 	jobs := make(chan *TileRequest, 2000)
 	results := make(chan *TileResponse, 2000)
@@ -264,7 +281,7 @@ func main() {
 	// Start the worker that receives data from HTTP workers
 	resultWG := &sync.WaitGroup{}
 	resultWG.Add(1)
-	go processResults(resultWG, results, mbtilesOutputter)
+	go processResults(resultWG, results, outputter)
 
 	consumer := func(tile *tilepack.Tile) {
 		url := strings.NewReplacer(
