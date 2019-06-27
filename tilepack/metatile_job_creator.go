@@ -26,7 +26,7 @@ func log2Uint(size uint) uint {
 	return uint(math.Log2(float64(size)))
 }
 
-func NewMetatileJobGenerator(bucket string, pathTemplate string, layerName string, metatileSize uint, zooms []uint, bounds *LngLatBbox) (JobGenerator, error) {
+func NewMetatileJobGenerator(bucket string, pathTemplate string, layerName string, metatileSize uint, maxDetailZoom uint, zooms []uint, bounds *LngLatBbox) (JobGenerator, error) {
 	sess, err := session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
 	})
@@ -37,24 +37,26 @@ func NewMetatileJobGenerator(bucket string, pathTemplate string, layerName strin
 	downloader := s3manager.NewDownloader(sess)
 
 	return &metatileJobGenerator{
-		s3Client:     downloader,
-		bucket:       bucket,
-		pathTemplate: pathTemplate,
-		layerName:    layerName,
-		metatileSize: metatileSize,
-		bounds:       bounds,
-		zooms:        zooms,
+		s3Client:      downloader,
+		bucket:        bucket,
+		pathTemplate:  pathTemplate,
+		layerName:     layerName,
+		metatileSize:  metatileSize,
+		maxDetailZoom: maxDetailZoom,
+		bounds:        bounds,
+		zooms:         zooms,
 	}, nil
 }
 
 type metatileJobGenerator struct {
-	s3Client     *s3manager.Downloader
-	bucket       string
-	pathTemplate string
-	layerName    string
-	metatileSize uint
-	bounds       *LngLatBbox
-	zooms        []uint
+	s3Client      *s3manager.Downloader
+	bucket        string
+	pathTemplate  string
+	layerName     string
+	metatileSize  uint
+	maxDetailZoom uint
+	bounds        *LngLatBbox
+	zooms         []uint
 }
 
 func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, results chan *TileResponse), error) {
@@ -165,6 +167,11 @@ func (x *metatileJobGenerator) CreateJobs(jobs chan *TileRequest) error {
 			metatileZoom = 0
 		} else {
 			metatileZoom = z - uint(deltaZoom)
+		}
+
+		// Beyond the "max detail zoom", all tiles are in the metatile
+		if x.maxDetailZoom > 0 && metatileZoom > x.maxDetailZoom {
+			metatileZoom = x.maxDetailZoom
 		}
 
 		if !arrayContains(metatileZoom, metatileZooms) {

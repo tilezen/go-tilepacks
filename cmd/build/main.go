@@ -132,10 +132,11 @@ func main() {
 			log.Fatalf("layerNameStr is required")
 		}
 
-		// TODO This should probably be configurable
+		// TODO These should probably be configurable
 		metatileSize := uint(8)
+		maxDetailZoom := uint(13)
 
-		jobCreator, err = tilepack.NewMetatileJobGenerator(*bucketStr, *pathTemplateStr, *layerNameStr, metatileSize, zooms, bounds)
+		jobCreator, err = tilepack.NewMetatileJobGenerator(*bucketStr, *pathTemplateStr, *layerNameStr, metatileSize, maxDetailZoom, zooms, bounds)
 	case "tapalcatl2":
 		if *bucketStr == "" {
 			log.Fatalf("Bucket name is required")
