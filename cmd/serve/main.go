@@ -15,7 +15,7 @@ import (
 )
 
 type MbtilesHandler struct {
-	mbtiles *tilepack.MbtilesReader
+	mbtiles tilepack.MbtilesReader
 }
 
 var (
