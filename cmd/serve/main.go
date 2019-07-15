@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/tilezen/go-tilepacks/tilepack"
 )
@@ -76,29 +78,51 @@ func (o *MbtilesHandler) TilesHandler() http.HandlerFunc {
 	}
 }
 
+func loggingMiddleware(logger *log.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer func() {
+				logger.Println(r.Method, r.URL.Path, r.RemoteAddr, r.UserAgent())
+			}()
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func main() {
 	mbtilesFile := flag.String("input", "", "The name of the mbtiles file to serve from.")
 	addr := flag.String("listen", ":8080", "The address and port to listen on")
 	flag.Parse()
 
+	logger := log.New(os.Stdout, "http: ", log.LstdFlags)
+
 	if *mbtilesFile == "" {
-		log.Fatal("Need to provide --input parameter")
+		logger.Fatal("Need to provide --input parameter")
 	}
 
 	mbtilesHandler, err := NewMbtilesHandler(*mbtilesFile)
 	if err != nil {
-		log.Fatalf("Couldn't create mbtiles handler: %+v", err)
+		logger.Fatalf("Couldn't create mbtiles handler: %+v", err)
 	}
 
-	http.HandleFunc("/preview.html", previewHTMLHandler)
-	http.Handle("/tilezen/", mbtilesHandler.TilesHandler())
-	http.HandleFunc("/", defaultHandler)
+	router := http.NewServeMux()
+	router.HandleFunc("/preview.html", previewHTMLHandler)
+	router.Handle("/tilezen/", mbtilesHandler.TilesHandler())
+	router.HandleFunc("/", defaultHandler)
 
-	log.Printf("Serving at %s", *addr)
-	err = http.ListenAndServe(*addr, nil)
-	if err != nil {
-		log.Fatalf("Problem serving: %+v", err)
+	server := &http.Server{
+		Addr:         *addr,
+		Handler:      loggingMiddleware(logger)(router),
+		ErrorLog:     logger,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 5 * time.Second,
+		IdleTimeout:  30 * time.Second,
 	}
+
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logger.Fatalf("Could not listen on %s: %v\n", addr, err)
+	}
+
 }
 
 func previewHTMLHandler(w http.ResponseWriter, r *http.Request) {

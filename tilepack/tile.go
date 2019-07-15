@@ -1,6 +1,7 @@
 package tilepack
 
 import (
+	"fmt"
 	"math"
 )
 
@@ -31,6 +32,13 @@ type LngLat struct {
 //LngLatBbox bounding box of a tile, in decimal degrees
 type LngLatBbox struct {
 	West, South, East, North float64
+}
+
+// Intersects returns true if this bounding box intersects with the other bounding box.
+func (b *LngLatBbox) Intersects(o *LngLatBbox) bool {
+	latOverlaps := (o.North > b.South) && (o.South < b.North)
+	lngOverlaps := (o.East > b.West) && (o.West < b.East)
+	return latOverlaps && lngOverlaps
 }
 
 //Bbox holds Spherical Mercator bounding box of a tile
@@ -201,6 +209,11 @@ func (tile *Tile) Children() []*Tile {
 		{tile.X * 2, tile.Y*2 + 1, tile.Z + 1},
 	}
 	return kids
+}
+
+// ToString returns a string representation of the tile.
+func (tile *Tile) ToString() string {
+	return fmt.Sprintf("{%d/%d/%d}", tile.Z, tile.X, tile.Y)
 }
 
 //ToXY transforms WGS84 DD to Spherical Mercator meters
