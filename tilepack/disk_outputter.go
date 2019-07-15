@@ -3,7 +3,6 @@ package tilepack
 import (
 	"errors"
 	"fmt"
-	_ "log"
 	"os"
 	"path/filepath"
 
@@ -17,15 +16,15 @@ type diskOutputter struct {
 	hasTiles bool
 }
 
-func NewDiskOutputter(dsn_str string) (*diskOutputter, error) {
+func NewDiskOutputter(dsnStr string) (*diskOutputter, error) {
 
-	dsn_map, err := dsn.StringToDSNWithKeys(dsn_str, "root", "format")
+	dsnMap, err := dsn.StringToDSNWithKeys(dsnStr, "root", "format")
 
 	if err != nil {
 		return nil, err
 	}
 
-	abs_root, err := filepath.Abs(dsn_map["root"])
+	abs_root, err := filepath.Abs(dsnMap["root"])
 
 	if err != nil {
 		return nil, err
@@ -33,7 +32,7 @@ func NewDiskOutputter(dsn_str string) (*diskOutputter, error) {
 
 	o := diskOutputter{
 		root:   abs_root,
-		format: dsn_map["format"],
+		format: dsnMap["format"],
 	}
 
 	return &o, nil
@@ -76,10 +75,10 @@ func (o *diskOutputter) CreateTiles() error {
 
 func (o *diskOutputter) Save(tile *Tile, data []byte) error {
 
-	rel_path := fmt.Sprintf("%d/%d/%d.%s", tile.Z, tile.X, tile.Y, o.format)
-	abs_path := filepath.Join(o.root, rel_path)
+	relPath := fmt.Sprintf("%d/%d/%d.%s", tile.Z, tile.X, tile.Y, o.format)
+	absPath := filepath.Join(o.root, relPath)
 
-	root := filepath.Dir(abs_path)
+	root := filepath.Dir(absPath)
 
 	_, err := os.Stat(root)
 
@@ -91,7 +90,7 @@ func (o *diskOutputter) Save(tile *Tile, data []byte) error {
 		return err
 	}
 
-	fh, err := os.OpenFile(abs_path, os.O_RDWR|os.O_CREATE, 0644)
+	fh, err := os.OpenFile(absPath, os.O_RDWR|os.O_CREATE, 0644)
 
 	if err != nil {
 		return err
