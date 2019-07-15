@@ -2,28 +2,42 @@ package tilepack
 
 import (
 	"database/sql"
+	"log"
 
 	_ "github.com/mattn/go-sqlite3" // Register sqlite3 database driver
 )
 
 type TileData struct {
+	Tile *Tile
 	Data *[]byte
 }
 
-func NewMbtilesReader(dsn string) (*MbtilesReader, error) {
+type MbtilesReader interface {
+	Close() error
+	GetTile(tile *Tile) (*TileData, error)
+	VisitAllTiles(visitor func(*Tile, []byte)) error
+}
+
+type tileDataFromDatabase struct {
+	Data *[]byte
+}
+
+func NewMbtilesReader(dsn string) (MbtilesReader, error) {
 	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	return &MbtilesReader{db: db}, nil
+	return &mbtilesReader{db: db}, nil
 }
 
-type MbtilesReader struct {
+type mbtilesReader struct {
+	MbtilesReader
 	db *sql.DB
 }
 
-func (o *MbtilesReader) Close() error {
+// Close gracefully tears down the mbtiles connection.
+func (o *mbtilesReader) Close() error {
 	var err error
 
 	if o.db != nil {
@@ -35,7 +49,8 @@ func (o *MbtilesReader) Close() error {
 	return err
 }
 
-func (o *MbtilesReader) GetTile(tile *Tile) (*TileData, error) {
+// GetTile returns data for the given tile.
+func (o *mbtilesReader) GetTile(tile *Tile) (*TileData, error) {
 	var data []byte
 
 	result := o.db.QueryRow("SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=? LIMIT 1", tile.Z, tile.X, tile.Y)
@@ -43,12 +58,37 @@ func (o *MbtilesReader) GetTile(tile *Tile) (*TileData, error) {
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return &TileData{Data: nil}, nil
+			blankTile := &TileData{Tile: tile, Data: nil}
+			return blankTile, nil
 		}
 		return nil, err
 	}
 
-	return &TileData{
+	tileData := &TileData{
+		Tile: tile,
 		Data: &data,
-	}, nil
+	}
+
+	return tileData, nil
+}
+
+// VisitAllTiles runs the given function on all tiles in this mbtiles archive.
+func (o *mbtilesReader) VisitAllTiles(visitor func(*Tile, []byte)) error {
+	rows, err := o.db.Query("SELECT zoom_level, tile_column, tile_row, tile_data FROM tiles")
+	if err != nil {
+		return err
+	}
+
+	var z, x, y uint
+	for rows.Next() {
+		data := []byte{}
+		err := rows.Scan(&z, &x, &y, &data)
+		if err != nil {
+			log.Printf("Couldn't scan row: %+v", err)
+		}
+
+		t := &Tile{Z: z, X: x, Y: y}
+		visitor(t, data)
+	}
+	return nil
 }
