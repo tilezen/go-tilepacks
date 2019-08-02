@@ -97,9 +97,10 @@ func (x *xyzJobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, r
 
 			var bodyData []byte
 			contentEncoding := resp.Header.Get("Content-Encoding")
-			if contentEncoding == "gzip" {
-				bodyData, err = ioutil.ReadAll(resp.Body)
-			} else {
+
+			switch contentEncoding {
+			case "gzip":
+
 				// Reset at the top in case we ran into a continue below
 				bodyBuffer.Reset()
 				bodyGzipper.Reset(bodyBuffer)
@@ -121,6 +122,8 @@ func (x *xyzJobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, r
 					log.Printf("Couldn't read bytes into byte array: %+v", err)
 					continue
 				}
+			default:
+				bodyData, err = ioutil.ReadAll(resp.Body)
 			}
 			resp.Body.Close()
 
