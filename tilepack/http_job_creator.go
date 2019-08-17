@@ -125,7 +125,12 @@ func (x *xyzJobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, r
 
 			resp, err := doHTTPWithRetry(x.httpClient, httpReq, 30)
 			if err != nil {
-				log.Printf("Skipping %+v: %+v", request, err)
+
+				// make this a tilepack-typed error
+				if err.Error() != "404 Not Found" {
+					log.Printf("Skipping %+v: %+v", request, err)
+				}
+
 				continue
 			}
 
