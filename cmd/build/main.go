@@ -47,6 +47,7 @@ func processResults(waitGroup *sync.WaitGroup, results chan *tilepack.TileRespon
 
 func main() {
 	generatorStr := flag.String("generator", "xyz", "Which tile fetcher to use. Options are xyz, metatile, tapalcatl2.")
+	generatorRoot := flag.String("root", "", "...")
 	outputMode := flag.String("output-mode", "mbtiles", "Valid modes are: disk, mbtiles.")
 	outputDSN := flag.String("dsn", "", "Path, or DSN string, to output files.")
 	boundingBoxStr := flag.String("bounds", "-90.0,-180.0,90.0,180.0", "Comma-separated bounding box in south,west,north,east format. Defaults to the whole world.")
@@ -119,7 +120,17 @@ func main() {
 			log.Fatalf("URL template is required")
 		}
 
-		jobCreator, err = tilepack.NewXYZJobGenerator(*urlTemplateStr, bounds, zooms, time.Duration(*requestTimeout)*time.Second, *invertedY)
+		if strings.HasPrefix(*urlTemplateStr, "file://") {
+
+			if *generatorRoot == "" {
+				log.Fatalf("generator root is required")
+			}
+
+			jobCreator, err = tilepack.NewLocalXYZJobGenerator(*generatorRoot, *urlTemplateStr, bounds, zooms, time.Duration(*requestTimeout)*time.Second, *invertedY)
+		} else {
+			jobCreator, err = tilepack.NewXYZJobGenerator(*urlTemplateStr, bounds, zooms, time.Duration(*requestTimeout)*time.Second, *invertedY)
+		}
+
 	case "metatile":
 		if *bucketStr == "" {
 			log.Fatalf("Bucket name is required")

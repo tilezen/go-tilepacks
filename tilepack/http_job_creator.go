@@ -3,12 +3,14 @@ package tilepack
 import (
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
@@ -25,6 +27,34 @@ func NewXYZJobGenerator(urlTemplate string, bounds *LngLatBbox, zooms []uint, ht
 		MaxIdleConnsPerHost: 500,
 		DisableCompression:  true,
 	}
+	httpClient.Transport = httpTransport
+
+	return &xyzJobGenerator{
+		httpClient:  httpClient,
+		urlTemplate: urlTemplate,
+		bounds:      bounds,
+		zooms:       zooms,
+		invertedY:   invertedY,
+	}, nil
+}
+
+func NewLocalXYZJobGenerator(root string, urlTemplate string, bounds *LngLatBbox, zooms []uint, httpTimeout time.Duration, invertedY bool) (JobGenerator, error) {
+
+	info, err := os.Stat(root)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if !info.IsDir() {
+		return nil, errors.New("Invalid root directory")
+	}
+
+	httpClient := &http.Client{}
+	httpClient.Timeout = httpTimeout
+
+	httpTransport := &http.Transport{}
+	httpTransport.RegisterProtocol("file", http.NewFileTransport(http.Dir(root)))
 	httpClient.Transport = httpTransport
 
 	return &xyzJobGenerator{
@@ -55,6 +85,10 @@ func doHTTPWithRetry(client *http.Client, request *http.Request, nRetries int) (
 
 		if resp.StatusCode == 200 {
 			return resp, nil
+		}
+
+		if resp.StatusCode == 404 {
+			return nil, errors.New(resp.Status)
 		}
 
 		// log.Printf("Failed to GET (try %d) %+v: %+v", i, request.URL, resp.Status)
