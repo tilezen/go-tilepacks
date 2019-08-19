@@ -15,6 +15,19 @@ import (
 	"time"
 )
 
+type HTTPError struct {
+	Code   int
+	Status string
+}
+
+func (e *HTTPError) Error() string {
+	return e.String()
+}
+
+func (e *HTTPError) String() string {
+	return e.Status
+}
+
 const (
 	httpUserAgent = "go-tilepacks/1.0"
 )
@@ -87,17 +100,19 @@ func doHTTPWithRetry(client *http.Client, request *http.Request, nRetries int) (
 			return resp, nil
 		}
 
-		if resp.StatusCode == 404 {
-			return nil, errors.New(resp.Status)
+		// log.Printf("Failed to GET (try %d) %+v: %+v", i, request.URL, resp.Status)
+
+		// was previously
+		// if resp.StatusCode > 500 && resp.StatusCode < 600 { sleep... }
+
+		if resp.StatusCode <= 500 || resp.StatusCode >= 600 {
+			return nil, &HTTPError{Code: resp.StatusCode, Status: resp.Status}
 		}
 
-		// log.Printf("Failed to GET (try %d) %+v: %+v", i, request.URL, resp.Status)
-		if resp.StatusCode > 500 && resp.StatusCode < 600 {
-			time.Sleep(sleep)
-			sleep *= 2.0
-			if sleep > 30.0 {
-				sleep = 30 * time.Second
-			}
+		time.Sleep(sleep)
+		sleep *= 2.0
+		if sleep > 30.0 {
+			sleep = 30 * time.Second
 		}
 	}
 
@@ -125,12 +140,7 @@ func (x *xyzJobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, r
 
 			resp, err := doHTTPWithRetry(x.httpClient, httpReq, 30)
 			if err != nil {
-
-				// make this a tilepack-typed error
-				if err.Error() != "404 Not Found" {
-					log.Printf("Skipping %+v: %+v", request, err)
-				}
-
+				log.Printf("Skipping %+v: %+v", request, err)
 				continue
 			}
 
