@@ -38,7 +38,7 @@ func NewXYZJobGenerator(urlTemplate string, bounds *LngLatBbox, zooms []uint, ht
 	}, nil
 }
 
-func NewLocalXYZJobGenerator(root string, urlTemplate string, bounds *LngLatBbox, zooms []uint, httpTimeout time.Duration, invertedY bool) (JobGenerator, error) {
+func NewFileTransportXYZJobGenerator(root string, urlTemplate string, bounds *LngLatBbox, zooms []uint, httpTimeout time.Duration, invertedY bool) (JobGenerator, error) {
 
 	info, err := os.Stat(root)
 
