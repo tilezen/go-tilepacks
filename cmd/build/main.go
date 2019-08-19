@@ -47,7 +47,7 @@ func processResults(waitGroup *sync.WaitGroup, results chan *tilepack.TileRespon
 
 func main() {
 	generatorStr := flag.String("generator", "xyz", "Which tile fetcher to use. Options are xyz, metatile, tapalcatl2.")
-	fileTransportRoot := flag.String("file-transport-root", "", "...")
+	fileTransportRoot := flag.String("file-transport-root", "", "The root directory for tiles if -url-template defines a file:// URL scheme")
 	outputMode := flag.String("output-mode", "mbtiles", "Valid modes are: disk, mbtiles.")
 	outputDSN := flag.String("dsn", "", "Path, or DSN string, to output files.")
 	boundingBoxStr := flag.String("bounds", "-90.0,-180.0,90.0,180.0", "Comma-separated bounding box in south,west,north,east format. Defaults to the whole world.")
@@ -56,7 +56,7 @@ func main() {
 	requestTimeout := flag.Int("timeout", 60, "HTTP client timeout for tile requests.")
 	cpuProfile := flag.String("cpuprofile", "", "Enables CPU profiling. Saves the dump to the given path.")
 	invertedY := flag.Bool("inverted-y", false, "Invert the Y-value of tiles to match the TMS (as opposed to ZXY) tile format.")
-	urlTemplateStr := flag.String("url-template", "", "(For xyz generator) URL template to make tile requests with.")
+	urlTemplateStr := flag.String("url-template", "", "(For xyz generator) URL template to make tile requests with. If URL template begins with file:// you must pass the -file-transport-root flag.")
 	layerNameStr := flag.String("layer-name", "", "(For metatile, tapalcatl2 generator) The layer name to use for hash building.")
 	pathTemplateStr := flag.String("path-template", "", "(For metatile, tapalcatl2 generator) The template to use for the path part of the S3 path to the t2 archive.")
 	bucketStr := flag.String("bucket", "", "(For metatile, tapalcatl2 generator) The name of the S3 bucket to request t2 archives from.")
