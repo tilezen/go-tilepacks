@@ -100,6 +100,8 @@ func doHTTPWithRetry(client *http.Client, request *http.Request, nRetries int) (
 			return resp, nil
 		}
 
+		resp.Body.Close()
+		
 		// log.Printf("Failed to GET (try %d) %+v: %+v", i, request.URL, resp.Status)
 
 		// was previously
