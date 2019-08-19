@@ -181,6 +181,10 @@ func main() {
 		log.Fatalf("Unknown job generator type %s", *generatorStr)
 	}
 
+	if err != nil {
+		log.Fatalf("Failed to create jobCreator: %s", err)
+	}
+	
 	var outputter tilepack.TileOutputter
 	var outputter_err error
 
