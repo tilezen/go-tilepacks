@@ -3,15 +3,30 @@ package tilepack
 import (
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
+
+type HTTPError struct {
+	Code   int
+	Status string
+}
+
+func (e *HTTPError) Error() string {
+	return e.String()
+}
+
+func (e *HTTPError) String() string {
+	return e.Status
+}
 
 const (
 	httpUserAgent = "go-tilepacks/1.0"
@@ -25,6 +40,34 @@ func NewXYZJobGenerator(urlTemplate string, bounds *LngLatBbox, zooms []uint, ht
 		MaxIdleConnsPerHost: 500,
 		DisableCompression:  true,
 	}
+	httpClient.Transport = httpTransport
+
+	return &xyzJobGenerator{
+		httpClient:  httpClient,
+		urlTemplate: urlTemplate,
+		bounds:      bounds,
+		zooms:       zooms,
+		invertedY:   invertedY,
+	}, nil
+}
+
+func NewFileTransportXYZJobGenerator(root string, urlTemplate string, bounds *LngLatBbox, zooms []uint, httpTimeout time.Duration, invertedY bool) (JobGenerator, error) {
+
+	info, err := os.Stat(root)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if !info.IsDir() {
+		return nil, errors.New("Invalid root directory")
+	}
+
+	httpClient := &http.Client{}
+	httpClient.Timeout = httpTimeout
+
+	httpTransport := &http.Transport{}
+	httpTransport.RegisterProtocol("file", http.NewFileTransport(http.Dir(root)))
 	httpClient.Transport = httpTransport
 
 	return &xyzJobGenerator{
@@ -57,13 +100,21 @@ func doHTTPWithRetry(client *http.Client, request *http.Request, nRetries int) (
 			return resp, nil
 		}
 
+		resp.Body.Close()
+		
 		// log.Printf("Failed to GET (try %d) %+v: %+v", i, request.URL, resp.Status)
-		if resp.StatusCode > 500 && resp.StatusCode < 600 {
-			time.Sleep(sleep)
-			sleep *= 2.0
-			if sleep > 30.0 {
-				sleep = 30 * time.Second
-			}
+
+		// was previously
+		// if resp.StatusCode > 500 && resp.StatusCode < 600 { sleep... }
+
+		if resp.StatusCode <= 500 || resp.StatusCode >= 600 {
+			return nil, &HTTPError{Code: resp.StatusCode, Status: resp.Status}
+		}
+
+		time.Sleep(sleep)
+		sleep *= 2.0
+		if sleep > 30.0 {
+			sleep = 30 * time.Second
 		}
 	}
 
@@ -97,9 +148,10 @@ func (x *xyzJobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, r
 
 			var bodyData []byte
 			contentEncoding := resp.Header.Get("Content-Encoding")
-			if contentEncoding == "gzip" {
-				bodyData, err = ioutil.ReadAll(resp.Body)
-			} else {
+
+			switch contentEncoding {
+			case "gzip":
+
 				// Reset at the top in case we ran into a continue below
 				bodyBuffer.Reset()
 				bodyGzipper.Reset(bodyBuffer)
@@ -121,6 +173,8 @@ func (x *xyzJobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, r
 					log.Printf("Couldn't read bytes into byte array: %+v", err)
 					continue
 				}
+			default:
+				bodyData, err = ioutil.ReadAll(resp.Body)
 			}
 			resp.Body.Close()
 
