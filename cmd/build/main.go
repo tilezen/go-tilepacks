@@ -4,6 +4,7 @@ import (
 	"flag"
 	"log"
 	"os"
+	"regexp"
 	"runtime/pprof"
 	"strconv"
 	"strings"
@@ -51,7 +52,7 @@ func main() {
 	outputMode := flag.String("output-mode", "mbtiles", "Valid modes are: disk, mbtiles.")
 	outputDSN := flag.String("dsn", "", "Path, or DSN string, to output files.")
 	boundingBoxStr := flag.String("bounds", "-90.0,-180.0,90.0,180.0", "Comma-separated bounding box in south,west,north,east format. Defaults to the whole world.")
-	zoomsStr := flag.String("zooms", "0,1,2,3,4,5,6,7,8,9,10", "Comma-separated list of zoom levels.")
+	zoomsStr := flag.String("zooms", "0,1,2,3,4,5,6,7,8,9,10", "Comma-separated list of zoom levels or a '{MIN_ZOOM}-{MAX_ZOOM}' range string.")
 	numTileFetchWorkers := flag.Int("workers", 25, "Number of tile fetch workers to use.")
 	requestTimeout := flag.Int("timeout", 60, "HTTP client timeout for tile requests.")
 	cpuProfile := flag.String("cpuprofile", "", "Enables CPU profiling. Saves the dump to the given path.")
@@ -101,15 +102,52 @@ func main() {
 		East:  boundingBoxFloats[3],
 	}
 
-	zoomsStrSplit := strings.Split(*zoomsStr, ",")
-	zooms := make([]uint, len(zoomsStrSplit))
-	for i, zoomStr := range zoomsStrSplit {
-		z, err := strconv.ParseUint(zoomStr, 10, 32)
+	var zooms []uint
+
+	re_zoom, re_err := regexp.Compile(`^\d+\-\d+$`)
+
+	if re_err != nil {
+		log.Fatal("Failed to compile zoom range regular expression")
+	}
+
+	if re_zoom.MatchString(*zoomsStr) {
+
+		zoom_range := strings.Split(*zoomsStr, "-")
+
+		min_zoom, err := strconv.ParseUint(zoom_range[0], 10, 32)
+
 		if err != nil {
-			log.Fatalf("Zoom list could not be parsed: %+v", err)
+			log.Fatalf("Failed to parse min zoom (%s), %s\n", zoom_range[0], err)
 		}
 
-		zooms[i] = uint(z)
+		max_zoom, err := strconv.ParseUint(zoom_range[1], 10, 32)
+
+		if err != nil {
+			log.Fatalf("Failed to parse max zoom (%s), %s\n", zoom_range[1], err)
+		}
+
+		if min_zoom > max_zoom {
+			log.Fatal("Invalid zoom range")
+		}
+
+		zooms = make([]uint, 0)
+
+		for z := min_zoom; z <= max_zoom; z++ {
+			zooms = append(zooms, uint(z))
+		}
+
+	} else {
+
+		zoomsStrSplit := strings.Split(*zoomsStr, ",")
+		zooms = make([]uint, len(zoomsStrSplit))
+		for i, zoomStr := range zoomsStrSplit {
+			z, err := strconv.ParseUint(zoomStr, 10, 32)
+			if err != nil {
+				log.Fatalf("Zoom list could not be parsed: %+v", err)
+			}
+
+			zooms[i] = uint(z)
+		}
 	}
 
 	var jobCreator tilepack.JobGenerator
@@ -184,7 +222,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create jobCreator: %s", err)
 	}
-	
+
 	var outputter tilepack.TileOutputter
 	var outputter_err error
 
