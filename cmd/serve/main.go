@@ -120,7 +120,7 @@ func main() {
 	}
 
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		logger.Fatalf("Could not listen on %s: %v\n", addr, err)
+		logger.Fatalf("Could not listen on %s: %v\n", *addr, err)
 	}
 
 }
