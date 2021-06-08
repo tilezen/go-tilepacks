@@ -87,6 +87,7 @@ func main() {
 
 	boundingBoxFloats := make([]float64, 4)
 	for i, bboxStr := range boundingBoxStrSplit {
+		bboxStr = strings.TrimSpace(bboxStr)
 		bboxFloat, err := strconv.ParseFloat(bboxStr, 64)
 		if err != nil {
 			log.Fatalf("Bounding box string could not be parsed as numbers")
