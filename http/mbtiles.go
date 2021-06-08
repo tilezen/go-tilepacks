@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	tilezenRegex = regexp.MustCompile(`^\/tilezen\/vector\/v1\/512\/all\/(\d+)\/(\d+)\/(\d+)\.mvt$`)
+	tilezenRegex = regexp.MustCompile(`\/tilezen\/vector\/v1\/512\/all\/(\d+)\/(\d+)\/(\d+)\.mvt$`)
 )
 
 func MbtilesHandler(reader tilepack.MbtilesReader) gohttp.HandlerFunc {
