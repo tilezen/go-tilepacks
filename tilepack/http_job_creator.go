@@ -1,11 +1,11 @@
 package tilepack
 
 import (
-	"bytes"
-	"compress/gzip"
+	_ "bytes"
+	_ "compress/gzip"
 	"errors"
 	"fmt"
-	"io"
+	_ "io"
 	"io/ioutil"
 	"log"
 	"math/rand"
@@ -125,8 +125,8 @@ func (x *xyzJobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, r
 	f := func(id int, jobs chan *TileRequest, results chan *TileResponse) {
 
 		// Instantiate the gzip support stuff once instead on every iteration
-		bodyBuffer := bytes.NewBuffer(nil)
-		bodyGzipper := gzip.NewWriter(bodyBuffer)
+		// bodyBuffer := bytes.NewBuffer(nil)
+		// bodyGzipper := gzip.NewWriter(bodyBuffer)
 
 		for request := range jobs {
 			start := time.Now()
@@ -154,6 +154,10 @@ func (x *xyzJobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, r
 				// If the server reports content encoding of gzip, we can just copy the bytes as-is
 				bodyData, err = ioutil.ReadAll(resp.Body)
 			default:
+
+				bodyData, err = ioutil.ReadAll(resp.Body)
+
+				/*
 				// Otherwise we'll gzip the data, so we should
 				// reset at the top in case we ran into a continue below
 				bodyBuffer.Reset()
@@ -172,6 +176,7 @@ func (x *xyzJobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, r
 				}
 
 				bodyData, err = ioutil.ReadAll(bodyBuffer)
+			*/
 				if err != nil {
 					log.Printf("Couldn't read bytes into byte array: %+v", err)
 					continue
