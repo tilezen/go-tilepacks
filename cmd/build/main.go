@@ -57,6 +57,7 @@ func main() {
 	requestTimeout := flag.Int("timeout", 60, "HTTP client timeout for tile requests.")
 	cpuProfile := flag.String("cpuprofile", "", "Enables CPU profiling. Saves the dump to the given path.")
 	invertedY := flag.Bool("inverted-y", false, "Invert the Y-value of tiles to match the TMS (as opposed to ZXY) tile format.")
+	ensureGzip := flag.Bool("ensure-gzip", true, "Ensure tile data is gzipped. Only applies to XYZ tiles.")
 	urlTemplateStr := flag.String("url-template", "", "(For xyz generator) URL template to make tile requests with. If URL template begins with file:// you must pass the -file-transport-root flag.")
 	layerNameStr := flag.String("layer-name", "", "(For metatile, tapalcatl2 generator) The layer name to use for hash building.")
 	pathTemplateStr := flag.String("path-template", "", "(For metatile, tapalcatl2 generator) The template to use for the path part of the S3 path to the t2 archive.")
@@ -165,9 +166,9 @@ func main() {
 				log.Fatalf("-file-transport-root flag is required when URL template uses file://")
 			}
 
-			jobCreator, err = tilepack.NewFileTransportXYZJobGenerator(*fileTransportRoot, *urlTemplateStr, bounds, zooms, time.Duration(*requestTimeout)*time.Second, *invertedY)
+			jobCreator, err = tilepack.NewFileTransportXYZJobGenerator(*fileTransportRoot, *urlTemplateStr, bounds, zooms, time.Duration(*requestTimeout)*time.Second, *invertedY, *ensureGzip)
 		} else {
-			jobCreator, err = tilepack.NewXYZJobGenerator(*urlTemplateStr, bounds, zooms, time.Duration(*requestTimeout)*time.Second, *invertedY)
+			jobCreator, err = tilepack.NewXYZJobGenerator(*urlTemplateStr, bounds, zooms, time.Duration(*requestTimeout)*time.Second, *invertedY, *ensureGzip)
 		}
 
 	case "metatile":

@@ -17,6 +17,8 @@ Usage of ./bin/build:
     	Enables CPU profiling. Saves the dump to the given path.
   -dsn string
     	Path, or DSN string, to output files.
+  -ensure-gzip
+    	Ensure tile data is gzipped. Only applies to XYZ tiles. (default true)
   -file-transport-root string
     	The root directory for tiles if -url-template defines a file:// URL scheme
   -generator string
