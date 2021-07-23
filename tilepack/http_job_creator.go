@@ -32,7 +32,7 @@ const (
 	httpUserAgent = "go-tilepacks/1.0"
 )
 
-func NewXYZJobGenerator(urlTemplate string, bounds *LngLatBbox, zooms []uint, httpTimeout time.Duration, invertedY bool) (JobGenerator, error) {
+func NewXYZJobGenerator(urlTemplate string, bounds *LngLatBbox, zooms []uint, httpTimeout time.Duration, invertedY bool, ensureGzip bool) (JobGenerator, error) {
 	// Configure the HTTP client with a timeout and connection pools
 	httpClient := &http.Client{}
 	httpClient.Timeout = httpTimeout
@@ -48,10 +48,11 @@ func NewXYZJobGenerator(urlTemplate string, bounds *LngLatBbox, zooms []uint, ht
 		bounds:      bounds,
 		zooms:       zooms,
 		invertedY:   invertedY,
+		ensureGzip:  ensureGzip,
 	}, nil
 }
 
-func NewFileTransportXYZJobGenerator(root string, urlTemplate string, bounds *LngLatBbox, zooms []uint, httpTimeout time.Duration, invertedY bool) (JobGenerator, error) {
+func NewFileTransportXYZJobGenerator(root string, urlTemplate string, bounds *LngLatBbox, zooms []uint, httpTimeout time.Duration, invertedY bool, ensureGzip bool) (JobGenerator, error) {
 
 	info, err := os.Stat(root)
 
@@ -76,6 +77,7 @@ func NewFileTransportXYZJobGenerator(root string, urlTemplate string, bounds *Ln
 		bounds:      bounds,
 		zooms:       zooms,
 		invertedY:   invertedY,
+		ensureGzip:  ensureGzip,
 	}, nil
 }
 
@@ -85,6 +87,7 @@ type xyzJobGenerator struct {
 	bounds      *LngLatBbox
 	zooms       []uint
 	invertedY   bool
+	ensureGzip  bool
 }
 
 func doHTTPWithRetry(client *http.Client, request *http.Request, nRetries int) (*http.Response, error) {
@@ -154,24 +157,31 @@ func (x *xyzJobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, r
 				// If the server reports content encoding of gzip, we can just copy the bytes as-is
 				bodyData, err = ioutil.ReadAll(resp.Body)
 			default:
-				// Otherwise we'll gzip the data, so we should
-				// reset at the top in case we ran into a continue below
-				bodyBuffer.Reset()
-				bodyGzipper.Reset(bodyBuffer)
 
-				_, err = io.Copy(bodyGzipper, resp.Body)
-				if err != nil {
-					log.Printf("Couldn't copy to gzipper: %+v", err)
-					continue
+				if !x.ensureGzip {
+					bodyData, err = ioutil.ReadAll(resp.Body)
+				} else {
+
+					// Otherwise we'll gzip the data, so we should
+					// reset at the top in case we ran into a continue below
+					bodyBuffer.Reset()
+					bodyGzipper.Reset(bodyBuffer)
+
+					_, err = io.Copy(bodyGzipper, resp.Body)
+					if err != nil {
+						log.Printf("Couldn't copy to gzipper: %+v", err)
+						continue
+					}
+
+					err = bodyGzipper.Flush()
+					if err != nil {
+						log.Printf("Couldn't flush gzipper: %+v", err)
+						continue
+					}
+
+					bodyData, err = ioutil.ReadAll(bodyBuffer)
 				}
 
-				err = bodyGzipper.Flush()
-				if err != nil {
-					log.Printf("Couldn't flush gzipper: %+v", err)
-					continue
-				}
-
-				bodyData, err = ioutil.ReadAll(bodyBuffer)
 				if err != nil {
 					log.Printf("Couldn't read bytes into byte array: %+v", err)
 					continue
