@@ -27,7 +27,10 @@ func NewMbtilesReader(dsn string) (MbtilesReader, error) {
 	if err != nil {
 		return nil, err
 	}
+	return NewMbtilesReaderWithDatabase(db)
+}
 
+func NewMbtilesReaderWithDatabase(db *sql.DB) (MbtilesReader, error) {
 	return &mbtilesReader{db: db}, nil
 }
 
