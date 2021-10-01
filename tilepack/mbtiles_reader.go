@@ -18,10 +18,6 @@ type MbtilesReader interface {
 	VisitAllTiles(visitor func(*Tile, []byte)) error
 }
 
-type tileDataFromDatabase struct {
-	Data *[]byte
-}
-
 func NewMbtilesReader(dsn string) (MbtilesReader, error) {
 	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {

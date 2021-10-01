@@ -1,11 +1,16 @@
 package main
 
 import (
+	"database/sql"
 	"flag"
 	"log"
 	gohttp "net/http"
 	"os"
+	"strings"
 	"time"
+
+	"github.com/psanford/sqlite3vfs"
+	"github.com/psanford/sqlite3vfshttp"
 
 	"github.com/tilezen/go-tilepacks/http"
 	"github.com/tilezen/go-tilepacks/tilepack"
@@ -29,14 +34,31 @@ func main() {
 
 	logger := log.New(os.Stdout, "http: ", log.LstdFlags)
 
+	var reader tilepack.MbtilesReader
+	var err error
 	if *mbtilesFile == "" {
 		logger.Fatal("Need to provide --input parameter")
+	} else if strings.HasPrefix(*mbtilesFile, "http") {
+		vfs := sqlite3vfshttp.HttpVFS{URL: *mbtilesFile}
+
+		err = sqlite3vfs.RegisterVFS("httpvfs", &vfs)
+		if err != nil {
+			logger.Fatalf("register vfs err: %s", err)
+		}
+
+		db, err := sql.Open("sqlite3", "not_a_read_name.db?vfs=httpvfs&mode=ro")
+		if err != nil {
+			logger.Fatalf("open db err: %s", err)
+		}
+
+		reader, _ = tilepack.NewMbtilesReaderWithDatabase(db)
+	} else {
+		reader, err = tilepack.NewMbtilesReader(*mbtilesFile)
+		if err != nil {
+			logger.Fatalf("Couldn't create MBtilesReader, %v", err)
+		}
 	}
 
-	reader, err := tilepack.NewMbtilesReader(*mbtilesFile)
-	if err != nil {
-		logger.Fatalf("Couldn't create MBtilesReader, %v", err)
-	}
 
 	mbtilesHandler := http.MbtilesHandler(reader)
 
