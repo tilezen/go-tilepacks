@@ -1,6 +1,6 @@
-# github.com/aaronland/go-string v0.1.2
+# github.com/aaronland/go-string v1.0.0
 github.com/aaronland/go-string/dsn
-# github.com/aws/aws-sdk-go v1.40.24
+# github.com/aws/aws-sdk-go v1.44.65
 github.com/aws/aws-sdk-go/aws
 github.com/aws/aws-sdk-go/aws/arn
 github.com/aws/aws-sdk-go/aws/awserr
@@ -54,5 +54,5 @@ github.com/aws/aws-sdk-go/service/sts
 github.com/aws/aws-sdk-go/service/sts/stsiface
 # github.com/jmespath/go-jmespath v0.4.0
 github.com/jmespath/go-jmespath
-# github.com/mattn/go-sqlite3 v1.14.8
+# github.com/mattn/go-sqlite3 v1.14.14
 github.com/mattn/go-sqlite3
