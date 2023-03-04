@@ -21,12 +21,14 @@ const (
 )
 
 func processResults(results chan *tilepack.TileResponse, processor tilepack.TileOutputter, progress *progressbar.ProgressBar) {
+	tileCount := 0
 	for result := range results {
 		err := processor.Save(result.Tile, result.Data)
 		if err != nil {
 			log.Printf("Couldn't save tile %+v", err)
 		}
 
+		tileCount += 1
 		progress.Add(1)
 	}
 
@@ -36,6 +38,7 @@ func processResults(results chan *tilepack.TileResponse, processor tilepack.Tile
 	}
 
 	progress.Finish()
+	log.Printf("Processed %d tiles", tileCount)
 }
 
 func main() {
