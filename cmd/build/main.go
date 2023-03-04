@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/schollz/progressbar/v3"
+
 	"github.com/tilezen/go-tilepacks/tilepack"
 )
 
@@ -222,7 +223,7 @@ func main() {
 	}
 
 	expectedTileCount := calculateExpectedTiles(bounds, zooms)
-	progress := progressbar.Default(int64(expectedTileCount))
+	progress := progressbar.NewOptions(int(expectedTileCount), progressbar.OptionSetItsString("tile"))
 	log.Printf("Expecting to fetch %d tiles", expectedTileCount)
 
 	var outputter tilepack.TileOutputter
@@ -298,9 +299,8 @@ func calculateExpectedTiles(bounds *tilepack.LngLatBbox, zooms []uint) uint {
 		Bounds: bounds,
 		Zooms:  zooms,
 		ConsumerFunc: func(ll *tilepack.Tile, ur *tilepack.Tile, z uint) {
-			tilesAtZoom := (ur.X + 1 - ll.X) * (ur.Y + 1 - ll.Y)
+			tilesAtZoom := (ur.X + 1 - ll.X) * (ll.Y + 1 - ur.Y)
 			totalTiles += tilesAtZoom
-			log.Printf("Zoom %d => %d tiles (%s to %s)", z, tilesAtZoom, ll.ToString(), ur.ToString())
 		},
 	}
 	tilepack.GenerateTileRanges(opts)
