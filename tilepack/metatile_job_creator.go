@@ -7,7 +7,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"math"
 	"strings"
@@ -26,7 +26,7 @@ func log2Uint(size uint) uint {
 	return uint(math.Log2(float64(size)))
 }
 
-func NewMetatileJobGenerator(bucket string, pathTemplate string, layerName string, metatileSize uint, maxDetailZoom uint, zooms []uint, bounds *LngLatBbox) (JobGenerator, error) {
+func NewMetatileJobGenerator(bucket string, pathTemplate string, layerName string, format string, metatileSize uint, maxDetailZoom uint, zooms []uint, bounds *LngLatBbox) (JobGenerator, error) {
 	sess, err := session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
 	})
@@ -45,6 +45,7 @@ func NewMetatileJobGenerator(bucket string, pathTemplate string, layerName strin
 		maxDetailZoom: maxDetailZoom,
 		bounds:        bounds,
 		zooms:         zooms,
+		format:        format,
 	}, nil
 }
 
@@ -57,6 +58,7 @@ type metatileJobGenerator struct {
 	maxDetailZoom uint
 	bounds        *LngLatBbox
 	zooms         []uint
+	format        string
 }
 
 func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, results chan *TileResponse), error) {
@@ -89,9 +91,14 @@ func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileReque
 			// Iterate over the contents of the zip and add them as TileResponses
 			for _, zf := range zippedReader.File {
 				var offsetZ, offsetX, offsetY uint
-				// TODO Pull in the format too?
-				if n, err := fmt.Sscanf(zf.Name, "%d/%d/%d.mvt", &offsetZ, &offsetX, &offsetY); err != nil || n != 3 {
+				var format string
+				if n, err := fmt.Sscanf(zf.Name, "%d/%d/%d.%s", &offsetZ, &offsetX, &offsetY, &format); err != nil || n != 4 {
 					log.Fatalf("Couldn't scan metatile name")
+				}
+
+				// Skip formats we don't care about
+				if format != x.format {
+					continue
 				}
 
 				// Add the offset to metatile to get the actual tile
@@ -115,7 +122,7 @@ func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileReque
 					log.Fatalf("Couldn't read zf %s: %+v", zf.Name, err)
 				}
 
-				b, err := ioutil.ReadAll(zfReader)
+				b, err := io.ReadAll(zfReader)
 				if err != nil {
 					log.Fatalf("Couldn't read zf %s: %+v", zf.Name, err)
 				}
@@ -136,7 +143,7 @@ func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileReque
 					continue
 				}
 
-				bodyData, err := ioutil.ReadAll(bodyBuffer)
+				bodyData, err := io.ReadAll(bodyBuffer)
 				if err != nil {
 					log.Printf("Couldn't read bytes into byte array: %+v", err)
 					continue

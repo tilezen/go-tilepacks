@@ -43,11 +43,31 @@ Usage of ./bin/build:
     	Comma-separated list of zoom levels. (default "0,1,2,3,4,5,6,7,8,9,10")
 ```
 
-#### Outputters
+## Job Creators
+
+### HTTP
+
+Required arguments:
+* `-url-template`: template for an HTTP request per tile. Use `{z}` for zoom, `{x}` for x or column, and `{y}` for y or row.
+
+### Metatile
+
+Required arguments:
+* `-bucket`: specify the S3 bucket to fetch from
+* `-layer-name`: a string name for the layer part of the path template.
+* `-path-template`: template for the path part of the request to S3. Use `{z}` for zoom, `{x}` for x or column, `{y}` for y or row, `{l}` for layer name, and `{h}` for the hash prefix (see below).
+
+#### Hash Prefix
+
+The "hash prefix" is used by the Tilezen tiler to spread the load of tile fetches across S3 shards. In practice, it is the first 5 characters of the MD5 sum of the evaluated template string `{zoom}/{x}/{y}.zip` (e.g. `12/242/533.zip`). 
+
+### Tapalcatl 2
+
+## Outputters
 
 The following tile "outputter" are supported, as defined by the `-mode` flag:
 
-##### disk
+### disk
 
 Clone tiles to a local directory. Valid `-dsn` strings must be in the form of:
 
@@ -55,11 +75,10 @@ Clone tiles to a local directory. Valid `-dsn` strings must be in the form of:
 -dsn 'root={PATH_TO_DIRECTORY_ROOT} format={TILE_FORMAT}'
 ```
 
-
-##### mbtiles
+### mbtiles
 
 Clone tiles to a MBTiles (SQLite) database. Valid `-dsn` strings must be in the form of:
 
 ```
--dsn {PATH_TO_MBTILES_DATABASE}
+-dsn '{PATH_TO_MBTILES_DATABASE}'
 ```

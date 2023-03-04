@@ -60,6 +60,7 @@ func main() {
 	ensureGzip := flag.Bool("ensure-gzip", true, "Ensure tile data is gzipped. Only applies to XYZ tiles.")
 	urlTemplateStr := flag.String("url-template", "", "(For xyz generator) URL template to make tile requests with. If URL template begins with file:// you must pass the -file-transport-root flag.")
 	layerNameStr := flag.String("layer-name", "", "(For metatile, tapalcatl2 generator) The layer name to use for hash building.")
+	formatStr := flag.String("format", "mvt", "(For metatile generator) The format of the tile inside the metatile to extract.")
 	pathTemplateStr := flag.String("path-template", "", "(For metatile, tapalcatl2 generator) The template to use for the path part of the S3 path to the t2 archive.")
 	bucketStr := flag.String("bucket", "", "(For metatile, tapalcatl2 generator) The name of the S3 bucket to request t2 archives from.")
 	materializedZoomsStr := flag.String("materialized-zooms", "", "(For tapalcatl2 generator) Specifies the materialized zooms for t2 archives.")
@@ -181,14 +182,18 @@ func main() {
 		}
 
 		if *layerNameStr == "" {
-			log.Fatalf("layerNameStr is required")
+			log.Fatalf("Layer name is required")
+		}
+
+		if *formatStr == "" {
+			log.Fatalf("Format is required")
 		}
 
 		// TODO These should probably be configurable
 		metatileSize := uint(8)
 		maxDetailZoom := uint(13)
 
-		jobCreator, err = tilepack.NewMetatileJobGenerator(*bucketStr, *pathTemplateStr, *layerNameStr, metatileSize, maxDetailZoom, zooms, bounds)
+		jobCreator, err = tilepack.NewMetatileJobGenerator(*bucketStr, *pathTemplateStr, *layerNameStr, *formatStr, metatileSize, maxDetailZoom, zooms, bounds)
 	case "tapalcatl2":
 		if *bucketStr == "" {
 			log.Fatalf("Bucket name is required")
