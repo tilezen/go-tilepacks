@@ -10,6 +10,14 @@ const oneEighty float64 = 180.0
 const radius float64 = 6378137.0
 const webMercatorLatLimit float64 = 85.05112877980659
 
+type GenerateBoxesConsumerFunc func(ll *Tile, ur *Tile, z uint)
+
+type GenerateRangesOptions struct {
+	Bounds       *LngLatBbox
+	Zooms        []uint
+	ConsumerFunc GenerateBoxesConsumerFunc
+}
+
 type GenerateTilesConsumerFunc func(tile *Tile)
 
 type GenerateTilesOptions struct {
@@ -19,17 +27,17 @@ type GenerateTilesOptions struct {
 	InvertedY    bool
 }
 
-//Tile struct is the main object we deal with, represents a standard X/Y/Z tile
+// Tile struct is the main object we deal with, represents a standard X/Y/Z tile
 type Tile struct {
 	X, Y, Z uint
 }
 
-//LngLat holds a standard geographic coordinate pair in decimal degrees
+// LngLat holds a standard geographic coordinate pair in decimal degrees
 type LngLat struct {
 	Lng, Lat float64
 }
 
-//LngLatBbox bounding box of a tile, in decimal degrees
+// LngLatBbox bounding box of a tile, in decimal degrees
 type LngLatBbox struct {
 	West, South, East, North float64
 }
@@ -41,12 +49,12 @@ func (b *LngLatBbox) Intersects(o *LngLatBbox) bool {
 	return latOverlaps && lngOverlaps
 }
 
-//Bbox holds Spherical Mercator bounding box of a tile
+// Bbox holds Spherical Mercator bounding box of a tile
 type Bbox struct {
 	Left, Bottom, Right, Top float64
 }
 
-//XY holds a Spherical Mercator point
+// XY holds a Spherical Mercator point
 type XY struct {
 	X, Y float64
 }
@@ -93,8 +101,7 @@ func GetTile(lng float64, lat float64, zoom uint) *Tile {
 
 }
 
-func GenerateTiles(opts *GenerateTilesOptions) {
-
+func GenerateTileRanges(opts *GenerateRangesOptions) {
 	bounds := opts.Bounds
 	zooms := opts.Zooms
 	consumer := opts.ConsumerFunc
@@ -123,32 +130,43 @@ func GenerateTiles(opts *GenerateTilesOptions) {
 			ll := GetTile(clampedBox.West, clampedBox.South, z)
 			ur := GetTile(clampedBox.East, clampedBox.North, z)
 
-			llx := ll.X
-			if llx < 0 {
-				llx = 0
+			if ll.X < 0 {
+				ll.X = 0
 			}
 
-			ury := ur.Y
-			if ury < 0 {
-				ury = 0
+			if ur.Y < 0 {
+				ur.Y = 0
 			}
 
-			for i := llx; i < min(ur.X+1, 1<<z); i++ {
-				for j := ury; j < min(ll.Y+1, 1<<z); j++ {
+			consumer(ll, ur, z)
+		}
+	}
+}
 
-					x := i
-					y := j
+func GenerateTiles(opts *GenerateTilesOptions) {
+	rangeOpts := &GenerateRangesOptions{
+		Bounds: opts.Bounds,
+		Zooms:  opts.Zooms,
+	}
 
-					if opts.InvertedY {
-						// https://gist.github.com/tmcw/4954720
-						y = uint(math.Pow(2.0, float64(z))) - 1 - y
-					}
+	rangeOpts.ConsumerFunc = func(ll *Tile, ur *Tile, z uint) {
+		for i := ll.X; i < min(ur.X+1, 1<<z); i++ {
+			for j := ur.Y; j < min(ll.Y+1, 1<<z); j++ {
 
-					consumer(&Tile{Z: z, X: x, Y: y})
+				x := i
+				y := j
+
+				if opts.InvertedY {
+					// https://gist.github.com/tmcw/4954720
+					y = uint(math.Pow(2.0, float64(z))) - 1 - y
 				}
+
+				opts.ConsumerFunc(&Tile{Z: z, X: x, Y: y})
 			}
 		}
 	}
+
+	GenerateTileRanges(rangeOpts)
 }
 
 // Equals compares 2 tiles
@@ -158,7 +176,7 @@ func (tile *Tile) Equals(t2 *Tile) bool {
 
 }
 
-//Ul returns the upper left corner of the tile decimal degrees
+// Ul returns the upper left corner of the tile decimal degrees
 func (tile *Tile) Ul() *LngLat {
 
 	n := math.Pow(2.0, float64(tile.Z))
@@ -169,7 +187,7 @@ func (tile *Tile) Ul() *LngLat {
 	return &LngLat{lonDeg, latDeg}
 }
 
-//Bounds returns a LngLatBbox for a given tile
+// Bounds returns a LngLatBbox for a given tile
 func (tile *Tile) Bounds() *LngLatBbox {
 	a := tile.Ul()
 	shifted := Tile{tile.X + 1, tile.Y + 1, tile.Z}
@@ -177,7 +195,7 @@ func (tile *Tile) Bounds() *LngLatBbox {
 	return &LngLatBbox{a.Lng, b.Lat, b.Lng, a.Lat}
 }
 
-//Parent returns the tile above (i.e. at a lower zoon number) the given tile
+// Parent returns the tile above (i.e. at a lower zoon number) the given tile
 func (tile *Tile) Parent() *Tile {
 
 	if tile.Z == 0 && tile.X == 0 && tile.Y == 0 {
@@ -199,7 +217,7 @@ func (tile *Tile) Parent() *Tile {
 	return nil
 }
 
-//Children returns the 4 tiles below (i.e. at a higher zoom number) the given tile
+// Children returns the 4 tiles below (i.e. at a higher zoom number) the given tile
 func (tile *Tile) Children() []*Tile {
 
 	kids := []*Tile{
@@ -216,7 +234,7 @@ func (tile *Tile) ToString() string {
 	return fmt.Sprintf("{%d/%d/%d}", tile.Z, tile.X, tile.Y)
 }
 
-//ToXY transforms WGS84 DD to Spherical Mercator meters
+// ToXY transforms WGS84 DD to Spherical Mercator meters
 func ToXY(ll *LngLat) *XY {
 
 	x := radius * deg2rad(ll.Lng)

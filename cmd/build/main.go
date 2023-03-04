@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/schollz/progressbar/v3"
 	"github.com/tilezen/go-tilepacks/tilepack"
 )
 
@@ -18,32 +19,22 @@ const (
 	saveLogInterval = 10000
 )
 
-func processResults(waitGroup *sync.WaitGroup, results chan *tilepack.TileResponse, processor tilepack.TileOutputter) {
-	defer waitGroup.Done()
-
-	start := time.Now()
-
-	counter := 0
+func processResults(results chan *tilepack.TileResponse, processor tilepack.TileOutputter, progress *progressbar.ProgressBar) {
 	for result := range results {
 		err := processor.Save(result.Tile, result.Data)
 		if err != nil {
 			log.Printf("Couldn't save tile %+v", err)
 		}
 
-		counter++
-
-		if counter%saveLogInterval == 0 {
-			duration := time.Since(start)
-			start = time.Now()
-			log.Printf("Saved %dk tiles (%0.1f tiles per second)", counter/1000, saveLogInterval/duration.Seconds())
-		}
+		progress.Add(1)
 	}
-	log.Printf("Saved %d tiles", counter)
 
 	err := processor.Close()
 	if err != nil {
 		log.Printf("Error closing processor: %+v", err)
 	}
+
+	progress.Finish()
 }
 
 func main() {
@@ -230,6 +221,10 @@ func main() {
 		log.Fatalf("Failed to create jobCreator: %s", err)
 	}
 
+	expectedTileCount := calculateExpectedTiles(bounds, zooms)
+	progress := progressbar.Default(int64(expectedTileCount))
+	log.Printf("Expecting to fetch %d tiles", expectedTileCount)
+
 	var outputter tilepack.TileOutputter
 	var outputter_err error
 
@@ -274,8 +269,11 @@ func main() {
 
 	// Start the worker that receives data from HTTP workers
 	resultWG := &sync.WaitGroup{}
-	resultWG.Add(1)
-	go processResults(resultWG, results, outputter)
+	go func() {
+		resultWG.Add(1)
+		defer resultWG.Done()
+		processResults(results, outputter, progress)
+	}()
 
 	jobCreator.CreateJobs(jobs)
 
@@ -291,4 +289,21 @@ func main() {
 	// Wait for the results to be written out
 	resultWG.Wait()
 	log.Print("Finished processing tiles")
+}
+
+func calculateExpectedTiles(bounds *tilepack.LngLatBbox, zooms []uint) uint {
+	totalTiles := uint(0)
+
+	opts := &tilepack.GenerateRangesOptions{
+		Bounds: bounds,
+		Zooms:  zooms,
+		ConsumerFunc: func(ll *tilepack.Tile, ur *tilepack.Tile, z uint) {
+			tilesAtZoom := (ur.X + 1 - ll.X) * (ur.Y + 1 - ll.Y)
+			totalTiles += tilesAtZoom
+			log.Printf("Zoom %d => %d tiles (%s to %s)", z, tilesAtZoom, ll.ToString(), ur.ToString())
+		},
+	}
+	tilepack.GenerateTileRanges(opts)
+
+	return totalTiles
 }
