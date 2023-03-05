@@ -46,7 +46,7 @@ func NewMetatileJobGenerator(bucket string, pathTemplate string, layerName strin
 		metatileSize:  metatileSize,
 		maxDetailZoom: maxDetailZoom,
 		bounds:        bounds,
-		zooms:         []maptile.Zoom{},
+		zooms:         zooms,
 		format:        format,
 	}, nil
 }

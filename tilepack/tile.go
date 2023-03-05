@@ -1,7 +1,6 @@
 package tilepack
 
 import (
-	"log"
 	"math"
 
 	"github.com/paulmach/orb"
@@ -60,8 +59,6 @@ func GenerateTileRanges(opts *GenerateRangesOptions) {
 				math.Min(webMercatorLatLimit, box.Max.Y()),
 			},
 		}
-
-		log.Printf("%f,%f -> %f,%f", clampedBox.Min.X(), clampedBox.Min.Y(), clampedBox.Max.X(), clampedBox.Max.Y())
 
 		for _, z := range zooms {
 			minTile := maptile.At(clampedBox.Min, z)
