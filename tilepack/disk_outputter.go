@@ -92,13 +92,11 @@ func (o *diskOutputter) Save(tile maptile.Tile, data []byte) error {
 	}
 
 	fh, err := os.OpenFile(absPath, os.O_RDWR|os.O_CREATE, 0644)
-
 	if err != nil {
 		return err
 	}
 
 	_, err = fh.Write(data)
-
 	if err != nil {
 		fh.Close()
 		return err

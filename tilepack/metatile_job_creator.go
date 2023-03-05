@@ -149,7 +149,7 @@ func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileReque
 					continue
 				}
 
-				err = bodyGzipper.Flush()
+				err = bodyGzipper.Close()
 				if err != nil {
 					log.Printf("Couldn't flush gzipper: %+v", err)
 					continue
