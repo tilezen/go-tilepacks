@@ -114,8 +114,13 @@ func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileReque
 					metaTileRequest.Tile.Z+maptile.Zoom(offsetZ),
 				)
 
-				// Only extract the zoom out of the metatile corresponding with the tile scale we care about
-				if offsetZ != uint32(deltaZoom) {
+				// Only extract the zoom out of the metatile corresponding with the tile scale we care about.
+				// The 0/0/0.zip metatile is special cased so we can get to the top of the pyramid.
+				if metaTileRequest.Tile.Z != 0 && offsetZ != uint32(deltaZoom) {
+					continue
+				}
+
+				if !arrayContains(t.Z, x.zooms) {
 					continue
 				}
 
