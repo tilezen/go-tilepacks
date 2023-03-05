@@ -257,8 +257,8 @@ func main() {
 		}
 
 		workerN := w
+		workerWG.Add(1)
 		go func() {
-			workerWG.Add(1)
 			defer workerWG.Done()
 			worker(workerN, jobs, results)
 		}()
@@ -266,8 +266,8 @@ func main() {
 
 	// Start the worker that receives data from HTTP workers
 	resultWG := &sync.WaitGroup{}
+	resultWG.Add(1)
 	go func() {
-		resultWG.Add(1)
 		defer resultWG.Done()
 		processResults(results, outputter, progress)
 	}()
