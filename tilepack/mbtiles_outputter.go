@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 
 	_ "github.com/mattn/go-sqlite3" // Register sqlite3 database driver
+	"github.com/paulmach/orb/maptile"
 )
 
 const (
@@ -85,7 +86,7 @@ func (o *mbtilesOutputter) CreateTiles() error {
 	return nil
 }
 
-func (o *mbtilesOutputter) Save(tile *Tile, data []byte) error {
+func (o *mbtilesOutputter) Save(tile maptile.Tile, data []byte) error {
 	if err := o.CreateTiles(); err != nil {
 		return err
 	}

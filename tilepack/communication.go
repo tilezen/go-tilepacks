@@ -1,12 +1,16 @@
 package tilepack
 
+import (
+	"github.com/paulmach/orb/maptile"
+)
+
 type TileRequest struct {
-	Tile *Tile
+	Tile maptile.Tile
 	URL  string
 }
 
 type TileResponse struct {
-	Tile    *Tile
+	Tile    maptile.Tile
 	Data    []byte
 	Elapsed float64
 }

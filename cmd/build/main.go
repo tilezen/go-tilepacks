@@ -11,13 +11,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/paulmach/orb"
+	"github.com/paulmach/orb/maptile"
 	"github.com/schollz/progressbar/v3"
 
 	"github.com/tilezen/go-tilepacks/tilepack"
-)
-
-const (
-	saveLogInterval = 10000
 )
 
 func processResults(results chan *tilepack.TileResponse, processor tilepack.TileOutputter, progress *progressbar.ProgressBar) {
@@ -93,58 +91,52 @@ func main() {
 		boundingBoxFloats[i] = bboxFloat
 	}
 
-	bounds := &tilepack.LngLatBbox{
-		South: boundingBoxFloats[0],
-		West:  boundingBoxFloats[1],
-		North: boundingBoxFloats[2],
-		East:  boundingBoxFloats[3],
+	bounds := orb.Bound{
+		Min: orb.Point{boundingBoxFloats[0], boundingBoxFloats[1]},
+		Max: orb.Point{boundingBoxFloats[2], boundingBoxFloats[3]},
 	}
 
-	var zooms []uint
+	var zooms []maptile.Zoom
 
-	re_zoom, re_err := regexp.Compile(`^\d+\-\d+$`)
+	reZoom := regexp.MustCompile(`^\d+-\d+$`)
 
-	if re_err != nil {
-		log.Fatal("Failed to compile zoom range regular expression")
-	}
+	if reZoom.MatchString(*zoomsStr) {
 
-	if re_zoom.MatchString(*zoomsStr) {
+		zoomRange := strings.Split(*zoomsStr, "-")
 
-		zoom_range := strings.Split(*zoomsStr, "-")
-
-		min_zoom, err := strconv.ParseUint(zoom_range[0], 10, 32)
+		minZoom, err := strconv.ParseUint(zoomRange[0], 10, 32)
 
 		if err != nil {
-			log.Fatalf("Failed to parse min zoom (%s), %s\n", zoom_range[0], err)
+			log.Fatalf("Failed to parse min zoom (%s), %s\n", zoomRange[0], err)
 		}
 
-		max_zoom, err := strconv.ParseUint(zoom_range[1], 10, 32)
+		maxZoom, err := strconv.ParseUint(zoomRange[1], 10, 32)
 
 		if err != nil {
-			log.Fatalf("Failed to parse max zoom (%s), %s\n", zoom_range[1], err)
+			log.Fatalf("Failed to parse max zoom (%s), %s\n", zoomRange[1], err)
 		}
 
-		if min_zoom > max_zoom {
+		if minZoom > maxZoom {
 			log.Fatal("Invalid zoom range")
 		}
 
-		zooms = make([]uint, 0)
+		zooms = make([]maptile.Zoom, 0)
 
-		for z := min_zoom; z <= max_zoom; z++ {
-			zooms = append(zooms, uint(z))
+		for z := maptile.Zoom(minZoom); z <= maptile.Zoom(maxZoom); z++ {
+			zooms = append(zooms, z)
 		}
 
 	} else {
 
 		zoomsStrSplit := strings.Split(*zoomsStr, ",")
-		zooms = make([]uint, len(zoomsStrSplit))
+		zooms = make([]maptile.Zoom, len(zoomsStrSplit))
 		for i, zoomStr := range zoomsStrSplit {
 			z, err := strconv.ParseUint(zoomStr, 10, 32)
 			if err != nil {
 				log.Fatalf("Zoom list could not be parsed: %+v", err)
 			}
 
-			zooms[i] = uint(z)
+			zooms[i] = maptile.Zoom(z)
 		}
 	}
 
@@ -186,7 +178,7 @@ func main() {
 
 		// TODO These should probably be configurable
 		metatileSize := uint(8)
-		maxDetailZoom := uint(13)
+		maxDetailZoom := maptile.Zoom(13)
 
 		jobCreator, err = tilepack.NewMetatileJobGenerator(*bucketStr, *pathTemplateStr, *layerNameStr, *formatStr, metatileSize, maxDetailZoom, zooms, bounds)
 	case "tapalcatl2":
@@ -207,13 +199,13 @@ func main() {
 		}
 
 		materializedZoomsStrSplit := strings.Split(*materializedZoomsStr, ",")
-		materializedZooms := make([]uint, len(materializedZoomsStrSplit))
+		materializedZooms := make([]maptile.Zoom, len(materializedZoomsStrSplit))
 		for i, materializedZoomStr := range materializedZoomsStrSplit {
 			z, err := strconv.ParseUint(materializedZoomStr, 10, 32)
 			if err != nil {
 				log.Fatalf("Materialized zoom list could not be parsed: %+v", err)
 			}
-			materializedZooms[i] = uint(z)
+			materializedZooms[i] = maptile.Zoom(z)
 		}
 
 		jobCreator, err = tilepack.NewTapalcatl2JobGenerator(*bucketStr, *pathTemplateStr, *layerNameStr, materializedZooms, zooms, bounds)
@@ -230,19 +222,19 @@ func main() {
 	log.Printf("Expecting to fetch %d tiles", expectedTileCount)
 
 	var outputter tilepack.TileOutputter
-	var outputter_err error
+	var outputterErr error
 
 	switch *outputMode {
 	case "disk":
-		outputter, outputter_err = tilepack.NewDiskOutputter(*outputDSN)
+		outputter, outputterErr = tilepack.NewDiskOutputter(*outputDSN)
 	case "mbtiles":
-		outputter, outputter_err = tilepack.NewMbtilesOutputter(*outputDSN)
+		outputter, outputterErr = tilepack.NewMbtilesOutputter(*outputDSN)
 	default:
 		log.Fatalf("Unknown outputter: %s", *outputMode)
 	}
 
-	if outputter_err != nil {
-		log.Fatalf("Couldn't create %s output: %+v", *outputMode, outputter_err)
+	if outputterErr != nil {
+		log.Fatalf("Couldn't create %s output: %+v", *outputMode, outputterErr)
 	}
 
 	err = outputter.CreateTiles()
@@ -264,10 +256,11 @@ func main() {
 			log.Fatalf("Couldn't create %s worker: %+v", *generatorStr, err)
 		}
 
+		workerN := w
 		go func() {
 			workerWG.Add(1)
 			defer workerWG.Done()
-			worker(w, jobs, results)
+			worker(workerN, jobs, results)
 		}()
 	}
 
@@ -295,14 +288,14 @@ func main() {
 	log.Print("Finished processing tiles")
 }
 
-func calculateExpectedTiles(bounds *tilepack.LngLatBbox, zooms []uint) uint {
-	totalTiles := uint(0)
+func calculateExpectedTiles(bounds orb.Bound, zooms []maptile.Zoom) uint32 {
+	totalTiles := uint32(0)
 
 	opts := &tilepack.GenerateRangesOptions{
 		Bounds: bounds,
 		Zooms:  zooms,
-		ConsumerFunc: func(ll *tilepack.Tile, ur *tilepack.Tile, z uint) {
-			tilesAtZoom := (ur.X + 1 - ll.X) * (ll.Y + 1 - ur.Y)
+		ConsumerFunc: func(minTile maptile.Tile, maxTile maptile.Tile, z maptile.Zoom) {
+			tilesAtZoom := (maxTile.X + 1 - minTile.X) * (maxTile.Y + 1 - minTile.Y)
 			totalTiles += tilesAtZoom
 		},
 	}

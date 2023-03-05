@@ -6,13 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/paulmach/orb"
+	"github.com/paulmach/orb/maptile"
 )
 
 type HTTPError struct {
@@ -32,7 +34,7 @@ const (
 	httpUserAgent = "go-tilepacks/1.0"
 )
 
-func NewXYZJobGenerator(urlTemplate string, bounds *LngLatBbox, zooms []uint, httpTimeout time.Duration, invertedY bool, ensureGzip bool) (JobGenerator, error) {
+func NewXYZJobGenerator(urlTemplate string, bounds orb.Bound, zooms []maptile.Zoom, httpTimeout time.Duration, invertedY bool, ensureGzip bool) (JobGenerator, error) {
 	// Configure the HTTP client with a timeout and connection pools
 	httpClient := &http.Client{}
 	httpClient.Timeout = httpTimeout
@@ -52,7 +54,7 @@ func NewXYZJobGenerator(urlTemplate string, bounds *LngLatBbox, zooms []uint, ht
 	}, nil
 }
 
-func NewFileTransportXYZJobGenerator(root string, urlTemplate string, bounds *LngLatBbox, zooms []uint, httpTimeout time.Duration, invertedY bool, ensureGzip bool) (JobGenerator, error) {
+func NewFileTransportXYZJobGenerator(root string, urlTemplate string, bounds orb.Bound, zooms []maptile.Zoom, httpTimeout time.Duration, invertedY bool, ensureGzip bool) (JobGenerator, error) {
 
 	info, err := os.Stat(root)
 
@@ -84,8 +86,8 @@ func NewFileTransportXYZJobGenerator(root string, urlTemplate string, bounds *Ln
 type xyzJobGenerator struct {
 	httpClient  *http.Client
 	urlTemplate string
-	bounds      *LngLatBbox
-	zooms       []uint
+	bounds      orb.Bound
+	zooms       []maptile.Zoom
 	invertedY   bool
 	ensureGzip  bool
 }
@@ -155,11 +157,11 @@ func (x *xyzJobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, r
 			switch contentEncoding {
 			case "gzip":
 				// If the server reports content encoding of gzip, we can just copy the bytes as-is
-				bodyData, err = ioutil.ReadAll(resp.Body)
+				bodyData, err = io.ReadAll(resp.Body)
 			default:
 
 				if !x.ensureGzip {
-					bodyData, err = ioutil.ReadAll(resp.Body)
+					bodyData, err = io.ReadAll(resp.Body)
 				} else {
 
 					// Otherwise we'll gzip the data, so we should
@@ -179,7 +181,7 @@ func (x *xyzJobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, r
 						continue
 					}
 
-					bodyData, err = ioutil.ReadAll(bodyBuffer)
+					bodyData, err = io.ReadAll(bodyBuffer)
 				}
 
 				if err != nil {
@@ -211,7 +213,7 @@ func (x *xyzJobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, r
 }
 
 func (x *xyzJobGenerator) CreateJobs(jobs chan *TileRequest) error {
-	consumer := func(tile *Tile) {
+	consumer := func(tile maptile.Tile) {
 		url := strings.NewReplacer(
 			"{x}", fmt.Sprintf("%d", tile.X),
 			"{y}", fmt.Sprintf("%d", tile.Y),
