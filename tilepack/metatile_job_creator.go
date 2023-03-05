@@ -64,6 +64,10 @@ type metatileJobGenerator struct {
 }
 
 func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, results chan *TileResponse), error) {
+	metaZoom := maptile.Zoom(log2Uint(x.metatileSize))
+	tileZoom := maptile.Zoom(log2Uint(tileScale))
+	deltaZoom := metaZoom - tileZoom
+
 	f := func(id int, jobs chan *TileRequest, results chan *TileResponse) {
 		// Instantiate the gzip support stuff once instead on every iteration
 		bodyBuffer := bytes.NewBuffer(nil)
@@ -110,7 +114,8 @@ func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileReque
 					metaTileRequest.Tile.Z+maptile.Zoom(offsetZ),
 				)
 
-				if !arrayContains(t.Z, x.zooms) {
+				// Only extract the zoom out of the metatile corresponding with the tile scale we care about
+				if offsetZ != uint32(deltaZoom) {
 					continue
 				}
 
