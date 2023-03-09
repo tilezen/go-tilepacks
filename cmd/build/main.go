@@ -254,6 +254,12 @@ func main() {
 	jobs := make(chan *tilepack.TileRequest, 2000)
 	results := make(chan *tilepack.TileResponse, 2000)
 
+	go func() {
+		for range time.Tick(time.Second) {
+			log.Printf("Jobs: %d, Results: %d", len(jobs), len(results))
+		}
+	}()
+
 	// Start up the HTTP workers that will fetch tiles
 	workerWG := &sync.WaitGroup{}
 	for w := 0; w < *numTileFetchWorkers; w++ {
