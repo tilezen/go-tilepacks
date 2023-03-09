@@ -9,25 +9,22 @@ import (
 	"github.com/paulmach/orb/maptile"
 )
 
-const (
-	batchSize = 1000
-)
-
-func NewMbtilesOutputter(dsn string) (*mbtilesOutputter, error) {
+func NewMbtilesOutputter(dsn string, batchSize int) (*mbtilesOutputter, error) {
 	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	return &mbtilesOutputter{db: db}, nil
+	return &mbtilesOutputter{db: db, batchSize: batchSize}, nil
 }
 
 type mbtilesOutputter struct {
 	TileOutputter
 	db         *sql.DB
 	txn        *sql.Tx
-	batchCount int
 	hasTiles   bool
+	batchCount int
+	batchSize  int
 }
 
 func (o *mbtilesOutputter) Close() error {
@@ -114,7 +111,7 @@ func (o *mbtilesOutputter) Save(tile maptile.Tile, data []byte) error {
 
 	o.batchCount++
 
-	if o.batchCount%batchSize == 0 {
+	if o.batchCount%o.batchSize == 0 {
 		err := o.txn.Commit()
 		if err != nil {
 			return err

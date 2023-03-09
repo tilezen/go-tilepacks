@@ -40,7 +40,7 @@ func main() {
 	}
 
 	// Create the output mbtiles
-	outputMbtiles, err := tilepack.NewMbtilesOutputter(*outputFilename)
+	outputMbtiles, err := tilepack.NewMbtilesOutputter(*outputFilename, 1000)
 	if err != nil {
 		log.Fatalf("Couldn't create output mbtiles: %+v", err)
 	}
