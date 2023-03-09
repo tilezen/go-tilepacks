@@ -36,7 +36,13 @@ func NewMetatileJobGenerator(bucket string, pathTemplate string, layerName strin
 		return nil, err
 	}
 
-	downloader := s3manager.NewDownloader(sess)
+	downloader := s3manager.NewDownloader(
+		sess,
+		func(downloader *s3manager.Downloader) {
+			// See https://levyeran.medium.com/high-memory-allocations-and-gc-cycles-while-downloading-large-s3-objects-using-the-aws-sdk-for-go-e776a136c5d0
+			downloader.BufferProvider = s3manager.NewPooledBufferedWriterReadFromProvider(15 * 1024 * 1024)
+		},
+	)
 
 	return &metatileJobGenerator{
 		s3Client:      downloader,
