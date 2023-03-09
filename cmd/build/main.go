@@ -223,6 +223,7 @@ func main() {
 		progressbar.OptionSetItsString("tile"),
 		progressbar.OptionShowIts(),
 		progressbar.OptionFullWidth(),
+		progressbar.OptionThrottle(100*time.Millisecond),
 	)
 	log.Printf("Expecting to fetch %d tiles", expectedTileCount)
 
