@@ -218,7 +218,12 @@ func main() {
 	}
 
 	expectedTileCount := calculateExpectedTiles(bounds, zooms)
-	progress := progressbar.NewOptions(int(expectedTileCount), progressbar.OptionSetItsString("tile"))
+	progress := progressbar.NewOptions(
+		int(expectedTileCount),
+		progressbar.OptionSetItsString("tile"),
+		progressbar.OptionShowIts(),
+		progressbar.OptionFullWidth(),
+	)
 	log.Printf("Expecting to fetch %d tiles", expectedTileCount)
 
 	var outputter tilepack.TileOutputter
