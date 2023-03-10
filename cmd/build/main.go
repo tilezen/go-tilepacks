@@ -44,7 +44,7 @@ func main() {
 	fileTransportRoot := flag.String("file-transport-root", "", "The root directory for tiles if -url-template defines a file:// URL scheme")
 	outputMode := flag.String("output-mode", "mbtiles", "Valid modes are: disk, mbtiles.")
 	outputDSN := flag.String("dsn", "", "Path, or DSN string, to output files.")
-	boundingBoxStr := flag.String("bounds", "-90.0,-180.0,90.0,180.0", "Comma-separated bounding box in south,west,north,east format. Defaults to the whole world.")
+	boundingBoxStr := flag.String("bounds", "-180.0,-90.0,180.0,90.0", "Comma-separated bounding box in west,south,east,north format. Defaults to the whole world.")
 	zoomsStr := flag.String("zooms", "0,1,2,3,4,5,6,7,8,9,10", "Comma-separated list of zoom levels or a '{MIN_ZOOM}-{MAX_ZOOM}' range string.")
 	numTileFetchWorkers := flag.Int("workers", 25, "Number of tile fetch workers to use.")
 	mbtilesBatchSize := flag.Int("batch-size", 50, "(For mbtiles outputter) Number of tiles to batch together before writing to mbtiles")
@@ -92,10 +92,10 @@ func main() {
 		boundingBoxFloats[i] = bboxFloat
 	}
 
-	bounds := orb.Bound{
-		Min: orb.Point{boundingBoxFloats[0], boundingBoxFloats[1]},
-		Max: orb.Point{boundingBoxFloats[2], boundingBoxFloats[3]},
-	}
+	bounds := orb.MultiPoint{
+		orb.Point{boundingBoxFloats[0], boundingBoxFloats[1]},
+		orb.Point{boundingBoxFloats[2], boundingBoxFloats[3]},
+	}.Bound()
 
 	var zooms []maptile.Zoom
 
