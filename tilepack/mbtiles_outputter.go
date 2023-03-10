@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"database/sql"
 	"encoding/hex"
+	"math"
 
 	_ "github.com/mattn/go-sqlite3" // Register sqlite3 database driver
 	"github.com/paulmach/orb/maptile"
@@ -99,12 +100,14 @@ func (o *mbtilesOutputter) Save(tile maptile.Tile, data []byte) error {
 	hash := md5.Sum(data)
 	tileID := hex.EncodeToString(hash[:])
 
+	invertedY := uint32(math.Pow(2.0, float64(tile.Z))) - 1 - tile.Y
+
 	_, err := o.txn.Exec("INSERT OR REPLACE INTO images (tile_id, tile_data) VALUES (?, ?);", tileID, data)
 	if err != nil {
 		return err
 	}
 
-	_, err = o.txn.Exec("INSERT OR REPLACE INTO map (zoom_level, tile_column, tile_row, tile_id) VALUES (?, ?, ?, ?);", tile.Z, tile.X, tile.Y, tileID)
+	_, err = o.txn.Exec("INSERT OR REPLACE INTO map (zoom_level, tile_column, tile_row, tile_id) VALUES (?, ?, ?, ?);", tile.Z, tile.X, invertedY, tileID)
 	if err != nil {
 		return err
 	}
