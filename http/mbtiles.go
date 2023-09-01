@@ -2,16 +2,19 @@ package http
 
 import (
 	"fmt"
-	"github.com/tilezen/go-tilepacks/tilepack"
 	"log"
 	gohttp "net/http"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/paulmach/orb/maptile"
+
+	"github.com/tilezen/go-tilepacks/tilepack"
 )
 
 var (
-	tilezenRegex = regexp.MustCompile(`\/tilezen\/vector\/v1\/512\/all\/(\d+)\/(\d+)\/(\d+)\.mvt$`)
+	tilezenRegex = regexp.MustCompile(`/tilezen/vector/v1/512/all/(\d+)/(\d+)/(\d+)\.mvt$`)
 )
 
 func MbtilesHandler(reader tilepack.MbtilesReader) gohttp.HandlerFunc {
@@ -23,7 +26,7 @@ func MbtilesHandler(reader tilepack.MbtilesReader) gohttp.HandlerFunc {
 			return
 		}
 
-		result, err := reader.GetTile(requestedTile)
+		result, err := reader.GetTile(*requestedTile)
 		if err != nil {
 			log.Printf("Error getting tile: %+v", err)
 			gohttp.NotFound(w, r)
@@ -47,7 +50,7 @@ func MbtilesHandler(reader tilepack.MbtilesReader) gohttp.HandlerFunc {
 	}
 }
 
-func parseTileFromPath(url string) (*tilepack.Tile, error) {
+func parseTileFromPath(url string) (*maptile.Tile, error) {
 	match := tilezenRegex.FindStringSubmatch(url)
 	if match == nil {
 		return nil, fmt.Errorf("invalid tile path")
@@ -57,5 +60,6 @@ func parseTileFromPath(url string) (*tilepack.Tile, error) {
 	x, _ := strconv.ParseUint(match[2], 10, 32)
 	y, _ := strconv.ParseUint(match[3], 10, 32)
 
-	return &tilepack.Tile{Z: uint(z), X: uint(x), Y: uint(y)}, nil
+	tile := maptile.New(uint32(x), uint32(y), maptile.Zoom(z))
+	return &tile, nil
 }
