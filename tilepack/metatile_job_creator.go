@@ -28,7 +28,7 @@ func log2Uint(size uint) uint {
 	return uint(math.Log2(float64(size)))
 }
 
-func NewMetatileJobGenerator(bucket string, pathTemplate string, layerName string, format string, metatileSize uint, maxDetailZoom maptile.Zoom, zooms []maptile.Zoom, bounds orb.Bound) (JobGenerator, error) {
+func NewMetatileJobGenerator(bucket string, requesterPays bool, pathTemplate string, layerName string, format string, metatileSize uint, maxDetailZoom maptile.Zoom, zooms []maptile.Zoom, bounds orb.Bound) (JobGenerator, error) {
 	sess, err := session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
 	})
@@ -47,6 +47,7 @@ func NewMetatileJobGenerator(bucket string, pathTemplate string, layerName strin
 	return &metatileJobGenerator{
 		s3Client:      downloader,
 		bucket:        bucket,
+		requesterPays: requesterPays,
 		pathTemplate:  pathTemplate,
 		layerName:     layerName,
 		metatileSize:  metatileSize,
@@ -60,6 +61,7 @@ func NewMetatileJobGenerator(bucket string, pathTemplate string, layerName strin
 type metatileJobGenerator struct {
 	s3Client      *s3manager.Downloader
 	bucket        string
+	requesterPays bool
 	pathTemplate  string
 	layerName     string
 	metatileSize  uint
@@ -78,10 +80,16 @@ func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileReque
 		for metaTileRequest := range jobs {
 			// Download the metatile archive zip to a byte buffer
 			compressedBytes := &aws.WriteAtBuffer{}
-			numBytes, err := x.s3Client.Download(compressedBytes, &s3.GetObjectInput{
+			input := &s3.GetObjectInput{
 				Bucket: aws.String(x.bucket),
 				Key:    aws.String(metaTileRequest.URL),
-			})
+			}
+
+			if x.requesterPays {
+				input.RequestPayer = aws.String("requester")
+			}
+
+			numBytes, err := x.s3Client.Download(compressedBytes, input)
 			if err != nil {
 				log.Printf("Unable to download item s3://%s/%s: %+v", x.bucket, metaTileRequest.URL, err)
 				continue

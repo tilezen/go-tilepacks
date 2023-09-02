@@ -18,7 +18,7 @@ import (
 	"github.com/paulmach/orb/maptile"
 )
 
-func NewTapalcatl2JobGenerator(bucket string, pathTemplate string, layerName string, materializedZooms []maptile.Zoom, zooms []maptile.Zoom, bounds orb.Bound) (JobGenerator, error) {
+func NewTapalcatl2JobGenerator(bucket string, requesterPays bool, pathTemplate string, layerName string, materializedZooms []maptile.Zoom, zooms []maptile.Zoom, bounds orb.Bound) (JobGenerator, error) {
 	sess, err := session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
 	})
@@ -31,6 +31,7 @@ func NewTapalcatl2JobGenerator(bucket string, pathTemplate string, layerName str
 	return &tapalcatl2JobGenerator{
 		s3Client:          downloader,
 		bucket:            bucket,
+		requesterPays:     requesterPays,
 		pathTemplate:      pathTemplate,
 		layerName:         layerName,
 		materializedZooms: materializedZooms,
@@ -42,6 +43,7 @@ func NewTapalcatl2JobGenerator(bucket string, pathTemplate string, layerName str
 type tapalcatl2JobGenerator struct {
 	s3Client          *s3manager.Downloader
 	bucket            string
+	requesterPays     bool
 	pathTemplate      string
 	layerName         string
 	materializedZooms []maptile.Zoom
@@ -63,10 +65,16 @@ func (x *tapalcatl2JobGenerator) CreateWorker() (func(id int, jobs chan *TileReq
 		for request := range jobs {
 			// Download the Tapalcatl2 archive zip to a byte buffer
 			compressedBytes := &aws.WriteAtBuffer{}
-			numBytes, err := x.s3Client.Download(compressedBytes, &s3.GetObjectInput{
+			input := &s3.GetObjectInput{
 				Bucket: aws.String(x.bucket),
 				Key:    aws.String(request.URL),
-			})
+			}
+
+			if x.requesterPays {
+				input.RequestPayer = aws.String("requester")
+			}
+
+			numBytes, err := x.s3Client.Download(compressedBytes, input)
 			if err != nil {
 				log.Fatalf("Unable to download item %s: %+v", request.URL, err)
 			}

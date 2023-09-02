@@ -57,6 +57,7 @@ func main() {
 	formatStr := flag.String("format", "mvt", "(For metatile generator) The format of the tile inside the metatile to extract.")
 	pathTemplateStr := flag.String("path-template", "", "(For metatile, tapalcatl2 generator) The template to use for the path part of the S3 path to the t2 archive.")
 	bucketStr := flag.String("bucket", "", "(For metatile, tapalcatl2 generator) The name of the S3 bucket to request t2 archives from.")
+	requesterPays := flag.Bool("requester-pays", false, "(For metatile, tapalcatl2 generator) Whether to make S3 requests with requester pays enabled.")
 	materializedZoomsStr := flag.String("materialized-zooms", "", "(For tapalcatl2 generator) Specifies the materialized zooms for t2 archives.")
 	flag.Parse()
 
@@ -181,7 +182,7 @@ func main() {
 		metatileSize := uint(8)
 		maxDetailZoom := maptile.Zoom(13)
 
-		jobCreator, err = tilepack.NewMetatileJobGenerator(*bucketStr, *pathTemplateStr, *layerNameStr, *formatStr, metatileSize, maxDetailZoom, zooms, bounds)
+		jobCreator, err = tilepack.NewMetatileJobGenerator(*bucketStr, *requesterPays, *pathTemplateStr, *layerNameStr, *formatStr, metatileSize, maxDetailZoom, zooms, bounds)
 	case "tapalcatl2":
 		if *bucketStr == "" {
 			log.Fatalf("Bucket name is required")
@@ -209,7 +210,7 @@ func main() {
 			materializedZooms[i] = maptile.Zoom(z)
 		}
 
-		jobCreator, err = tilepack.NewTapalcatl2JobGenerator(*bucketStr, *pathTemplateStr, *layerNameStr, materializedZooms, zooms, bounds)
+		jobCreator, err = tilepack.NewTapalcatl2JobGenerator(*bucketStr, *requesterPays, *pathTemplateStr, *layerNameStr, materializedZooms, zooms, bounds)
 	default:
 		log.Fatalf("Unknown job generator type %s", *generatorStr)
 	}
