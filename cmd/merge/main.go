@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/paulmach/orb/maptile"
+
 	"github.com/tilezen/go-tilepacks/tilepack"
 )
 
@@ -38,7 +40,7 @@ func main() {
 	}
 
 	// Create the output mbtiles
-	outputMbtiles, err := tilepack.NewMbtilesOutputter(*outputFilename)
+	outputMbtiles, err := tilepack.NewMbtilesOutputter(*outputFilename, 1000)
 	if err != nil {
 		log.Fatalf("Couldn't create output mbtiles: %+v", err)
 	}
@@ -54,7 +56,7 @@ func main() {
 			log.Fatalf("Couldn't read input mbtiles %s: %+v", inputFilename, err)
 		}
 
-		err = mbtilesReader.VisitAllTiles(func(t *tilepack.Tile, data []byte) {
+		err = mbtilesReader.VisitAllTiles(func(t maptile.Tile, data []byte) {
 			outputMbtiles.Save(t, data)
 		})
 		if err != nil {

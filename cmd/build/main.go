@@ -11,39 +11,32 @@ import (
 	"sync"
 	"time"
 
+	"github.com/paulmach/orb"
+	"github.com/paulmach/orb/maptile"
+	"github.com/schollz/progressbar/v3"
+
 	"github.com/tilezen/go-tilepacks/tilepack"
 )
 
-const (
-	saveLogInterval = 10000
-)
-
-func processResults(waitGroup *sync.WaitGroup, results chan *tilepack.TileResponse, processor tilepack.TileOutputter) {
-	defer waitGroup.Done()
-
-	start := time.Now()
-
-	counter := 0
+func processResults(results chan *tilepack.TileResponse, processor tilepack.TileOutputter, progress *progressbar.ProgressBar) {
+	tileCount := 0
 	for result := range results {
 		err := processor.Save(result.Tile, result.Data)
 		if err != nil {
 			log.Printf("Couldn't save tile %+v", err)
 		}
 
-		counter++
-
-		if counter%saveLogInterval == 0 {
-			duration := time.Since(start)
-			start = time.Now()
-			log.Printf("Saved %dk tiles (%0.1f tiles per second)", counter/1000, saveLogInterval/duration.Seconds())
-		}
+		tileCount += 1
+		progress.Add(1)
 	}
-	log.Printf("Saved %d tiles", counter)
 
 	err := processor.Close()
 	if err != nil {
 		log.Printf("Error closing processor: %+v", err)
 	}
+
+	progress.Finish()
+	log.Printf("Processed %d tiles", tileCount)
 }
 
 func main() {
@@ -54,14 +47,17 @@ func main() {
 	boundingBoxStr := flag.String("bounds", "-90.0,-180.0,90.0,180.0", "Comma-separated bounding box in south,west,north,east format. Defaults to the whole world.")
 	zoomsStr := flag.String("zooms", "0,1,2,3,4,5,6,7,8,9,10", "Comma-separated list of zoom levels or a '{MIN_ZOOM}-{MAX_ZOOM}' range string.")
 	numTileFetchWorkers := flag.Int("workers", 25, "Number of tile fetch workers to use.")
+	mbtilesBatchSize := flag.Int("batch-size", 50, "(For mbtiles outputter) Number of tiles to batch together before writing to mbtiles")
 	requestTimeout := flag.Int("timeout", 60, "HTTP client timeout for tile requests.")
 	cpuProfile := flag.String("cpuprofile", "", "Enables CPU profiling. Saves the dump to the given path.")
 	invertedY := flag.Bool("inverted-y", false, "Invert the Y-value of tiles to match the TMS (as opposed to ZXY) tile format.")
 	ensureGzip := flag.Bool("ensure-gzip", true, "Ensure tile data is gzipped. Only applies to XYZ tiles.")
 	urlTemplateStr := flag.String("url-template", "", "(For xyz generator) URL template to make tile requests with. If URL template begins with file:// you must pass the -file-transport-root flag.")
 	layerNameStr := flag.String("layer-name", "", "(For metatile, tapalcatl2 generator) The layer name to use for hash building.")
+	formatStr := flag.String("format", "mvt", "(For metatile generator) The format of the tile inside the metatile to extract.")
 	pathTemplateStr := flag.String("path-template", "", "(For metatile, tapalcatl2 generator) The template to use for the path part of the S3 path to the t2 archive.")
 	bucketStr := flag.String("bucket", "", "(For metatile, tapalcatl2 generator) The name of the S3 bucket to request t2 archives from.")
+	requesterPays := flag.Bool("requester-pays", false, "(For metatile, tapalcatl2 generator) Whether to make S3 requests with requester pays enabled.")
 	materializedZoomsStr := flag.String("materialized-zooms", "", "(For tapalcatl2 generator) Specifies the materialized zooms for t2 archives.")
 	flag.Parse()
 
@@ -97,58 +93,52 @@ func main() {
 		boundingBoxFloats[i] = bboxFloat
 	}
 
-	bounds := &tilepack.LngLatBbox{
-		South: boundingBoxFloats[0],
-		West:  boundingBoxFloats[1],
-		North: boundingBoxFloats[2],
-		East:  boundingBoxFloats[3],
-	}
+	bounds := orb.MultiPoint{
+		orb.Point{boundingBoxFloats[1], boundingBoxFloats[0]},
+		orb.Point{boundingBoxFloats[3], boundingBoxFloats[2]},
+	}.Bound()
 
-	var zooms []uint
+	var zooms []maptile.Zoom
 
-	re_zoom, re_err := regexp.Compile(`^\d+\-\d+$`)
+	reZoom := regexp.MustCompile(`^\d+-\d+$`)
 
-	if re_err != nil {
-		log.Fatal("Failed to compile zoom range regular expression")
-	}
+	if reZoom.MatchString(*zoomsStr) {
 
-	if re_zoom.MatchString(*zoomsStr) {
+		zoomRange := strings.Split(*zoomsStr, "-")
 
-		zoom_range := strings.Split(*zoomsStr, "-")
-
-		min_zoom, err := strconv.ParseUint(zoom_range[0], 10, 32)
+		minZoom, err := strconv.ParseUint(zoomRange[0], 10, 32)
 
 		if err != nil {
-			log.Fatalf("Failed to parse min zoom (%s), %s\n", zoom_range[0], err)
+			log.Fatalf("Failed to parse min zoom (%s), %s\n", zoomRange[0], err)
 		}
 
-		max_zoom, err := strconv.ParseUint(zoom_range[1], 10, 32)
+		maxZoom, err := strconv.ParseUint(zoomRange[1], 10, 32)
 
 		if err != nil {
-			log.Fatalf("Failed to parse max zoom (%s), %s\n", zoom_range[1], err)
+			log.Fatalf("Failed to parse max zoom (%s), %s\n", zoomRange[1], err)
 		}
 
-		if min_zoom > max_zoom {
+		if minZoom > maxZoom {
 			log.Fatal("Invalid zoom range")
 		}
 
-		zooms = make([]uint, 0)
+		zooms = make([]maptile.Zoom, 0)
 
-		for z := min_zoom; z <= max_zoom; z++ {
-			zooms = append(zooms, uint(z))
+		for z := maptile.Zoom(minZoom); z <= maptile.Zoom(maxZoom); z++ {
+			zooms = append(zooms, z)
 		}
 
 	} else {
 
 		zoomsStrSplit := strings.Split(*zoomsStr, ",")
-		zooms = make([]uint, len(zoomsStrSplit))
+		zooms = make([]maptile.Zoom, len(zoomsStrSplit))
 		for i, zoomStr := range zoomsStrSplit {
 			z, err := strconv.ParseUint(zoomStr, 10, 32)
 			if err != nil {
 				log.Fatalf("Zoom list could not be parsed: %+v", err)
 			}
 
-			zooms[i] = uint(z)
+			zooms[i] = maptile.Zoom(z)
 		}
 	}
 
@@ -181,14 +171,18 @@ func main() {
 		}
 
 		if *layerNameStr == "" {
-			log.Fatalf("layerNameStr is required")
+			log.Fatalf("Layer name is required")
+		}
+
+		if *formatStr == "" {
+			log.Fatalf("Format is required")
 		}
 
 		// TODO These should probably be configurable
 		metatileSize := uint(8)
-		maxDetailZoom := uint(13)
+		maxDetailZoom := maptile.Zoom(13)
 
-		jobCreator, err = tilepack.NewMetatileJobGenerator(*bucketStr, *pathTemplateStr, *layerNameStr, metatileSize, maxDetailZoom, zooms, bounds)
+		jobCreator, err = tilepack.NewMetatileJobGenerator(*bucketStr, *requesterPays, *pathTemplateStr, *layerNameStr, *formatStr, metatileSize, maxDetailZoom, zooms, bounds)
 	case "tapalcatl2":
 		if *bucketStr == "" {
 			log.Fatalf("Bucket name is required")
@@ -207,16 +201,16 @@ func main() {
 		}
 
 		materializedZoomsStrSplit := strings.Split(*materializedZoomsStr, ",")
-		materializedZooms := make([]uint, len(materializedZoomsStrSplit))
+		materializedZooms := make([]maptile.Zoom, len(materializedZoomsStrSplit))
 		for i, materializedZoomStr := range materializedZoomsStrSplit {
 			z, err := strconv.ParseUint(materializedZoomStr, 10, 32)
 			if err != nil {
 				log.Fatalf("Materialized zoom list could not be parsed: %+v", err)
 			}
-			materializedZooms[i] = uint(z)
+			materializedZooms[i] = maptile.Zoom(z)
 		}
 
-		jobCreator, err = tilepack.NewTapalcatl2JobGenerator(*bucketStr, *pathTemplateStr, *layerNameStr, materializedZooms, zooms, bounds)
+		jobCreator, err = tilepack.NewTapalcatl2JobGenerator(*bucketStr, *requesterPays, *pathTemplateStr, *layerNameStr, materializedZooms, zooms, bounds)
 	default:
 		log.Fatalf("Unknown job generator type %s", *generatorStr)
 	}
@@ -225,20 +219,30 @@ func main() {
 		log.Fatalf("Failed to create jobCreator: %s", err)
 	}
 
+	expectedTileCount := calculateExpectedTiles(bounds, zooms)
+	progress := progressbar.NewOptions(
+		int(expectedTileCount),
+		progressbar.OptionSetItsString("tile"),
+		progressbar.OptionShowIts(),
+		progressbar.OptionFullWidth(),
+		progressbar.OptionThrottle(100*time.Millisecond),
+	)
+	log.Printf("Expecting to fetch %d tiles", expectedTileCount)
+
 	var outputter tilepack.TileOutputter
-	var outputter_err error
+	var outputterErr error
 
 	switch *outputMode {
 	case "disk":
-		outputter, outputter_err = tilepack.NewDiskOutputter(*outputDSN)
+		outputter, outputterErr = tilepack.NewDiskOutputter(*outputDSN)
 	case "mbtiles":
-		outputter, outputter_err = tilepack.NewMbtilesOutputter(*outputDSN)
+		outputter, outputterErr = tilepack.NewMbtilesOutputter(*outputDSN, *mbtilesBatchSize)
 	default:
 		log.Fatalf("Unknown outputter: %s", *outputMode)
 	}
 
-	if outputter_err != nil {
-		log.Fatalf("Couldn't create %s output: %+v", *outputMode, outputter_err)
+	if outputterErr != nil {
+		log.Fatalf("Couldn't create %s output: %+v", *outputMode, outputterErr)
 	}
 
 	err = outputter.CreateTiles()
@@ -260,17 +264,21 @@ func main() {
 			log.Fatalf("Couldn't create %s worker: %+v", *generatorStr, err)
 		}
 
+		workerN := w
+		workerWG.Add(1)
 		go func() {
-			workerWG.Add(1)
 			defer workerWG.Done()
-			worker(w, jobs, results)
+			worker(workerN, jobs, results)
 		}()
 	}
 
 	// Start the worker that receives data from HTTP workers
 	resultWG := &sync.WaitGroup{}
 	resultWG.Add(1)
-	go processResults(resultWG, results, outputter)
+	go func() {
+		defer resultWG.Done()
+		processResults(results, outputter, progress)
+	}()
 
 	jobCreator.CreateJobs(jobs)
 
@@ -286,4 +294,20 @@ func main() {
 	// Wait for the results to be written out
 	resultWG.Wait()
 	log.Print("Finished processing tiles")
+}
+
+func calculateExpectedTiles(bounds orb.Bound, zooms []maptile.Zoom) uint32 {
+	totalTiles := uint32(0)
+
+	opts := &tilepack.GenerateRangesOptions{
+		Bounds: bounds,
+		Zooms:  zooms,
+		ConsumerFunc: func(minTile maptile.Tile, maxTile maptile.Tile, z maptile.Zoom) {
+			tilesAtZoom := (maxTile.X + 1 - minTile.X) * (maxTile.Y + 1 - minTile.Y)
+			totalTiles += tilesAtZoom
+		},
+	}
+	tilepack.GenerateTileRanges(opts)
+
+	return totalTiles
 }

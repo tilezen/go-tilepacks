@@ -6,7 +6,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"strings"
 
@@ -14,9 +14,11 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/paulmach/orb"
+	"github.com/paulmach/orb/maptile"
 )
 
-func NewTapalcatl2JobGenerator(bucket string, pathTemplate string, layerName string, materializedZooms []uint, zooms []uint, bounds *LngLatBbox) (JobGenerator, error) {
+func NewTapalcatl2JobGenerator(bucket string, requesterPays bool, pathTemplate string, layerName string, materializedZooms []maptile.Zoom, zooms []maptile.Zoom, bounds orb.Bound) (JobGenerator, error) {
 	sess, err := session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
 	})
@@ -29,6 +31,7 @@ func NewTapalcatl2JobGenerator(bucket string, pathTemplate string, layerName str
 	return &tapalcatl2JobGenerator{
 		s3Client:          downloader,
 		bucket:            bucket,
+		requesterPays:     requesterPays,
 		pathTemplate:      pathTemplate,
 		layerName:         layerName,
 		materializedZooms: materializedZooms,
@@ -40,14 +43,15 @@ func NewTapalcatl2JobGenerator(bucket string, pathTemplate string, layerName str
 type tapalcatl2JobGenerator struct {
 	s3Client          *s3manager.Downloader
 	bucket            string
+	requesterPays     bool
 	pathTemplate      string
 	layerName         string
-	materializedZooms []uint
-	bounds            *LngLatBbox
-	zooms             []uint
+	materializedZooms []maptile.Zoom
+	bounds            orb.Bound
+	zooms             []maptile.Zoom
 }
 
-func arrayContains(needle uint, haystack []uint) bool {
+func arrayContains(needle maptile.Zoom, haystack []maptile.Zoom) bool {
 	for _, z := range haystack {
 		if z == needle {
 			return true
@@ -61,10 +65,16 @@ func (x *tapalcatl2JobGenerator) CreateWorker() (func(id int, jobs chan *TileReq
 		for request := range jobs {
 			// Download the Tapalcatl2 archive zip to a byte buffer
 			compressedBytes := &aws.WriteAtBuffer{}
-			numBytes, err := x.s3Client.Download(compressedBytes, &s3.GetObjectInput{
+			input := &s3.GetObjectInput{
 				Bucket: aws.String(x.bucket),
 				Key:    aws.String(request.URL),
-			})
+			}
+
+			if x.requesterPays {
+				input.RequestPayer = aws.String("requester")
+			}
+
+			numBytes, err := x.s3Client.Download(compressedBytes, input)
 			if err != nil {
 				log.Fatalf("Unable to download item %s: %+v", request.URL, err)
 			}
@@ -79,18 +89,19 @@ func (x *tapalcatl2JobGenerator) CreateWorker() (func(id int, jobs chan *TileReq
 
 			// Iterate over the contents of the zip and add them as TileResponses
 			for _, zf := range zippedReader.File {
-				var tileZ, tileX, tileY uint
+				var tileX, tileY uint32
+				var tileZ maptile.Zoom
 				if n, err := fmt.Sscanf(zf.Name, "%d/%d/%d@2x.png", &tileZ, &tileX, &tileY); err != nil || n != 3 {
 					log.Fatalf("Couldn't scan t2 name")
 				}
 
-				t := &Tile{Z: tileZ, X: tileX, Y: tileY}
+				t := maptile.New(tileX, tileY, tileZ)
 
 				if !arrayContains(tileZ, x.zooms) {
 					continue
 				}
 
-				if !x.bounds.Intersects(t.Bounds()) {
+				if !x.bounds.Intersects(t.Bound()) {
 					continue
 				}
 
@@ -100,7 +111,7 @@ func (x *tapalcatl2JobGenerator) CreateWorker() (func(id int, jobs chan *TileReq
 					log.Fatalf("Couldn't read zf %s: %+v", zf.Name, err)
 				}
 
-				b, err := ioutil.ReadAll(zfReader)
+				b, err := io.ReadAll(zfReader)
 				if err != nil {
 					log.Fatalf("Couldn't read zf %s: %+v", zf.Name, err)
 				}
@@ -123,8 +134,8 @@ func (x *tapalcatl2JobGenerator) CreateJobs(jobs chan *TileRequest) error {
 		GenerateTiles(&GenerateTilesOptions{
 			Bounds:    x.bounds,
 			InvertedY: false,
-			Zooms:     []uint{materializedZoom},
-			ConsumerFunc: func(t *Tile) {
+			Zooms:     []maptile.Zoom{materializedZoom},
+			ConsumerFunc: func(t maptile.Tile) {
 				hash := md5.Sum([]byte(fmt.Sprintf("%d/%d/%d.zip", t.Z, t.X, t.Y)))
 				hashHex := hex.EncodeToString(hash[:])
 

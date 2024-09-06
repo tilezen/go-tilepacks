@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/aaronland/go-string/dsn"
+	"github.com/paulmach/orb/maptile"
 )
 
 type diskOutputter struct {
@@ -73,7 +74,7 @@ func (o *diskOutputter) CreateTiles() error {
 	return nil
 }
 
-func (o *diskOutputter) Save(tile *Tile, data []byte) error {
+func (o *diskOutputter) Save(tile maptile.Tile, data []byte) error {
 
 	relPath := fmt.Sprintf("%d/%d/%d.%s", tile.Z, tile.X, tile.Y, o.format)
 	absPath := filepath.Join(o.root, relPath)
@@ -91,13 +92,11 @@ func (o *diskOutputter) Save(tile *Tile, data []byte) error {
 	}
 
 	fh, err := os.OpenFile(absPath, os.O_RDWR|os.O_CREATE, 0644)
-
 	if err != nil {
 		return err
 	}
 
 	_, err = fh.Write(data)
-
 	if err != nil {
 		fh.Close()
 		return err

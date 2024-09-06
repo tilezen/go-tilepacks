@@ -1,7 +1,11 @@
 package tilepack
 
+import (
+	"github.com/paulmach/orb/maptile"
+)
+
 type TileOutputter interface {
 	CreateTiles() error
-	Save(tile *Tile, data []byte) error
+	Save(tile maptile.Tile, data []byte) error
 	Close() error
 }
