@@ -4,19 +4,22 @@ import (
 	"crypto/md5"
 	"database/sql"
 	"encoding/hex"
+	"fmt"
 	"math"
+	"strconv"
 
 	_ "github.com/mattn/go-sqlite3" // Register sqlite3 database driver
+	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/maptile"
 )
 
-func NewMbtilesOutputter(dsn string, batchSize int) (*mbtilesOutputter, error) {
+func NewMbtilesOutputter(dsn string, batchSize int, bounds orb.Bound, minZoom maptile.Zoom, maxZoom maptile.Zoom) (*mbtilesOutputter, error) {
 	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	return &mbtilesOutputter{db: db, batchSize: batchSize}, nil
+	return &mbtilesOutputter{db: db, batchSize: batchSize, bounds: bounds, minZoom: minZoom, maxZoom: maxZoom}, nil
 }
 
 type mbtilesOutputter struct {
@@ -26,6 +29,9 @@ type mbtilesOutputter struct {
 	hasTiles   bool
 	batchCount int
 	batchSize  int
+	bounds     orb.Bound
+	minZoom    maptile.Zoom
+	maxZoom    maptile.Zoom
 }
 
 func (o *mbtilesOutputter) Close() error {
@@ -84,8 +90,44 @@ func (o *mbtilesOutputter) CreateTiles() error {
 	return nil
 }
 
+func (o *mbtilesOutputter) AssignMetadata(bounds orb.Bound, minZoom maptile.Zoom, maxZoom maptile.Zoom) error {
+
+	// https://github.com/mapbox/mbtiles-spec/blob/master/1.3/spec.md
+
+	center := bounds.Center()
+
+	str_bounds := fmt.Sprintf("%f,%f,%f,%f", bounds.Min[0], bounds.Min[1], bounds.Max[0], bounds.Max[1])
+	str_center := fmt.Sprintf("%f,%f", center[0], center[1])
+
+	str_minzoom := strconv.Itoa(int(minZoom))
+	str_maxzoom := strconv.Itoa(int(maxZoom))
+
+	metadata := map[string]string{
+		"bounds":  str_bounds,
+		"center":  str_center,
+		"minzoom": str_minzoom,
+		"maxzoom": str_maxzoom,
+	}
+
+	for name, value := range metadata {
+
+		q := "INSERT INTO metadata (name, value) VALUES(?, ?)"
+		_, err := o.db.Exec(q, name, value)
+
+		if err != nil {
+			return fmt.Errorf("Failed to add %s metadata key, %w", name, err)
+		}
+	}
+
+	return nil
+}
+
 func (o *mbtilesOutputter) Save(tile maptile.Tile, data []byte) error {
 	if err := o.CreateTiles(); err != nil {
+		return err
+	}
+
+	if err := o.AssignMetadata(o.bounds, o.minZoom, o.maxZoom); err != nil {
 		return err
 	}
 

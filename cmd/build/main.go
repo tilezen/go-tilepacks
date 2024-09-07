@@ -236,7 +236,7 @@ func main() {
 	case "disk":
 		outputter, outputterErr = tilepack.NewDiskOutputter(*outputDSN)
 	case "mbtiles":
-		outputter, outputterErr = tilepack.NewMbtilesOutputter(*outputDSN, *mbtilesBatchSize)
+		outputter, outputterErr = tilepack.NewMbtilesOutputter(*outputDSN, *mbtilesBatchSize, bounds, zooms[0], zooms[len(zooms)-1])
 	default:
 		log.Fatalf("Unknown outputter: %s", *outputMode)
 	}

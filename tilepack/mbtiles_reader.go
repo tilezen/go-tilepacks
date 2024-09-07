@@ -2,9 +2,13 @@ package tilepack
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
+	"strconv"
+	"strings"
 
 	_ "github.com/mattn/go-sqlite3" // Register sqlite3 database driver
+	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/maptile"
 )
 
@@ -17,6 +21,60 @@ type MbtilesReader interface {
 	Close() error
 	GetTile(tile maptile.Tile) (*TileData, error)
 	VisitAllTiles(visitor func(maptile.Tile, []byte)) error
+	Metadata() (*MbtilesMetadata, error)
+}
+
+type MbtilesMetadata map[string]string
+
+func (m *MbtilesMetadata) Bounds() (orb.Bound, error) {
+
+	str_bounds, exists := m["bounds"]
+
+	if !exists {
+		return nil, fmt.Errorf("Metadata is missing bounds")
+	}
+
+	parts := strings.Split(str_bounds, ",")
+
+	if len(parts) != 4 {
+		return nil, fmt.Errorf("Invalid bounds metadata")
+	}
+
+	return nil, nil
+}
+
+func (m *MbtilesMetadata) MinZoom() (uint, error) {
+
+	str_minzoom, exists := *m["minzoom"]
+
+	if !exists {
+		return 0, fmt.Errorf("Metadata is missing minzoom")
+	}
+
+	i, err := strconv.Atoi(str_minzoom)
+
+	if err != nil {
+		return 0, fmt.Errorf("Failed to parse minzoom value, %w", err)
+	}
+
+	return uint(i), nil
+}
+
+func (m *MbtilesMetadata) MaxZoom() (uint, error) {
+
+	str_maxzoom, exists := *m["maxzoom"]
+
+	if !exists {
+		return 0, fmt.Errorf("Metadata is missing maxzoom")
+	}
+
+	i, err := strconv.Atoi(str_maxzoom)
+
+	if err != nil {
+		return 0, fmt.Errorf("Failed to parse maxzoom value, %w", err)
+	}
+
+	return uint(i), nil
 }
 
 type tileDataFromDatabase struct {
