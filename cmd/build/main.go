@@ -236,7 +236,7 @@ func main() {
 	case "disk":
 		outputter, outputterErr = tilepack.NewDiskOutputter(*outputDSN)
 	case "mbtiles":
-		outputter, outputterErr = tilepack.NewMbtilesOutputter(*outputDSN, *mbtilesBatchSize, bounds, zooms[0], zooms[len(zooms)-1])
+		outputter, outputterErr = tilepack.NewMbtilesOutputter(*outputDSN, *mbtilesBatchSize)
 	default:
 		log.Fatalf("Unknown outputter: %s", *outputMode)
 	}
@@ -294,6 +294,15 @@ func main() {
 	// Wait for the results to be written out
 	resultWG.Wait()
 	log.Print("Finished processing tiles")
+
+	switch *outputMode {
+	case "mbtiles":
+		err = outputter.AssignSpatialMetadata(bounds, zooms[0], zooms[len(zooms)-1])
+
+		if err != nil {
+			log.Printf("Wrote tiles but failed to assign spatial metadata, %v", err)
+		}
+	}
 }
 
 func calculateExpectedTiles(bounds orb.Bound, zooms []maptile.Zoom) uint32 {

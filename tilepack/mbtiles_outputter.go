@@ -13,13 +13,13 @@ import (
 	"github.com/paulmach/orb/maptile"
 )
 
-func NewMbtilesOutputter(dsn string, batchSize int, bounds orb.Bound, minZoom maptile.Zoom, maxZoom maptile.Zoom) (*mbtilesOutputter, error) {
+func NewMbtilesOutputter(dsn string, batchSize int) (*mbtilesOutputter, error) {
 	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	return &mbtilesOutputter{db: db, batchSize: batchSize, bounds: bounds, minZoom: minZoom, maxZoom: maxZoom}, nil
+	return &mbtilesOutputter{db: db, batchSize: batchSize}, nil
 }
 
 type mbtilesOutputter struct {
@@ -29,9 +29,6 @@ type mbtilesOutputter struct {
 	hasTiles   bool
 	batchCount int
 	batchSize  int
-	bounds     orb.Bound
-	minZoom    maptile.Zoom
-	maxZoom    maptile.Zoom
 }
 
 func (o *mbtilesOutputter) Close() error {
@@ -90,7 +87,7 @@ func (o *mbtilesOutputter) CreateTiles() error {
 	return nil
 }
 
-func (o *mbtilesOutputter) AssignMetadata(bounds orb.Bound, minZoom maptile.Zoom, maxZoom maptile.Zoom) error {
+func (o *mbtilesOutputter) AssignSpatialMetadata(bounds orb.Bound, minZoom maptile.Zoom, maxZoom maptile.Zoom) error {
 
 	// https://github.com/mapbox/mbtiles-spec/blob/master/1.3/spec.md
 
@@ -124,10 +121,6 @@ func (o *mbtilesOutputter) AssignMetadata(bounds orb.Bound, minZoom maptile.Zoom
 
 func (o *mbtilesOutputter) Save(tile maptile.Tile, data []byte) error {
 	if err := o.CreateTiles(); err != nil {
-		return err
-	}
-
-	if err := o.AssignMetadata(o.bounds, o.minZoom, o.maxZoom); err != nil {
 		return err
 	}
 

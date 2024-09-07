@@ -89,7 +89,7 @@ func main() {
 	}
 
 	// Create the output mbtiles
-	outputMbtiles, err := tilepack.NewMbtilesOutputter(*outputFilename, 1000, outputBounds, maptile.Zoom(outputMinZoom), maptile.Zoom(outputMaxZoom))
+	outputMbtiles, err := tilepack.NewMbtilesOutputter(*outputFilename, 1000)
 	if err != nil {
 		log.Fatalf("Couldn't create output mbtiles: %+v", err)
 	}
@@ -108,6 +108,12 @@ func main() {
 			log.Fatalf("Couldn't read tiles from %s: %+v", inputFilenames[i], err)
 		}
 		mbtilesReader.Close()
+	}
+
+	err = outputMbtiles.AssignSpatialMetadata(outputBounds, maptile.Zoom(outputMinZoom), maptile.Zoom(outputMaxZoom))
+
+	if err != nil {
+		log.Printf("Wrote tiles but failed to assign spatial metadata, %v", err)
 	}
 
 	outputMbtiles.Close()
