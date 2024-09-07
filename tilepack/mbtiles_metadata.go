@@ -88,6 +88,38 @@ func (m *MbtilesMetadata) Bounds() (orb.Bound, error) {
 	return bounds, nil
 }
 
+func (m *MbtilesMetadata) Center() (orb.Point, error) {
+
+	var pt orb.Point
+
+	str_center, exists := m.Get("center")
+
+	if !exists {
+		return pt, fmt.Errorf("Metadata is missing center")
+	}
+
+	parts := strings.Split(str_center, ",")
+
+	if len(parts) != 2 {
+		return pt, fmt.Errorf("Invalid center metadata")
+	}
+
+	x, err := strconv.ParseFloat(parts[0], 64)
+
+	if err != nil {
+		return pt, fmt.Errorf("Failed to parse x, %w", err)
+	}
+
+	y, err := strconv.ParseFloat(parts[1], 64)
+
+	if err != nil {
+		return pt, fmt.Errorf("Failed to parse y, %w", err)
+	}
+
+	pt = orb.Point([2]float64{x, y})
+	return pt, nil
+}
+
 func (m *MbtilesMetadata) MinZoom() (uint, error) {
 
 	str_minzoom, exists := m.Get("minzoom")
