@@ -108,7 +108,7 @@ func (o *mbtilesOutputter) AssignSpatialMetadata(bounds orb.Bound, minZoom mapti
 
 	for name, value := range metadata {
 
-		q := "INSERT INTO metadata (name, value) VALUES(?, ?)"
+		q := "INSERT OR REPLACE INTO metadata (name, value) VALUES(?, ?)"
 		_, err := o.db.Exec(q, name, value)
 
 		if err != nil {
