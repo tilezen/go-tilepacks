@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/maptile"
 	"github.com/tilezen/go-tilepacks/tilepack"
 )
@@ -63,7 +64,7 @@ func main() {
 			log.Fatalf("Unable to derive bounds for %s, %v", inputFilename, err)
 		}
 
-		if outputBounds == nil {
+		if i == 0 {
 			outputBounds = bounds
 		} else {
 			outputBounds = outputBounds.Union(bounds)
@@ -81,8 +82,8 @@ func main() {
 			log.Fatalf("Unable to max zoom for %s, %v", inputFilename, err)
 		}
 
-		outputMinZoom = min(outputMinZoom, minzoom)
-		outputMaxZoom = min(outputMaxZoom, maxzoom)
+		outputMinZoom = min(outputMinZoom, minZoom)
+		outputMaxZoom = min(outputMaxZoom, maxZoom)
 
 		inputReaders[i] = mbtilesReader
 	}
@@ -98,13 +99,13 @@ func main() {
 		log.Fatalf("Couldn't create output mbtiles: %+v", err)
 	}
 
-	for _, mbtilesReader := range inputReaders {
+	for i, mbtilesReader := range inputReaders {
 
 		err = mbtilesReader.VisitAllTiles(func(t maptile.Tile, data []byte) {
 			outputMbtiles.Save(t, data)
 		})
 		if err != nil {
-			log.Fatalf("Couldn't read tiles from %s: %+v", inputFilename, err)
+			log.Fatalf("Couldn't read tiles from %s: %+v", inputFilenames[i], err)
 		}
 		mbtilesReader.Close()
 	}
