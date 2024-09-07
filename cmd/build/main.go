@@ -295,13 +295,10 @@ func main() {
 	resultWG.Wait()
 	log.Print("Finished processing tiles")
 
-	switch *outputMode {
-	case "mbtiles":
-		err = outputter.AssignSpatialMetadata(bounds, zooms[0], zooms[len(zooms)-1])
-
-		if err != nil {
-			log.Printf("Wrote tiles but failed to assign spatial metadata, %v", err)
-		}
+	err = outputter.AssignSpatialMetadata(bounds, zooms[0], zooms[len(zooms)-1])
+	
+	if err != nil {
+		log.Printf("Wrote tiles but failed to assign spatial metadata, %v", err)
 	}
 }
 
