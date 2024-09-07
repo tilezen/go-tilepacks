@@ -24,16 +24,6 @@ func main() {
 		if err != nil {
 			log.Fatalf("Couldn't read input mbtiles %s: %+v", path, err)
 		}
-
-		/*
-		metadata, err := mbtilesReader.Metadata()
-
-		if err != nil {
-			log.Fatalf("Unable to read metadata for %s, %v", path, err)
-		}
-
-		log.Println(metadata)
-		*/
 		
 		var bounds *orb.Bound
 		minZoom := uint(20)
