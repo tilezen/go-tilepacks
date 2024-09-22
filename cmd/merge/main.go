@@ -79,7 +79,7 @@ func main() {
 		maxZoom, err := metadata.MaxZoom()
 
 		if err != nil {
-			log.Fatalf("Unable to max zoom for %s, %v", inputFilename, err)
+			log.Fatalf("Unable to derive max zoom for %s, %v", inputFilename, err)
 		}
 
 		outputMinZoom = min(outputMinZoom, minZoom)
