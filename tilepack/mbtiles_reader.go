@@ -17,6 +17,7 @@ type MbtilesReader interface {
 	Close() error
 	GetTile(tile maptile.Tile) (*TileData, error)
 	VisitAllTiles(visitor func(maptile.Tile, []byte)) error
+	Metadata() (*MbtilesMetadata, error)
 }
 
 type tileDataFromDatabase struct {
@@ -96,4 +97,41 @@ func (o *mbtilesReader) VisitAllTiles(visitor func(maptile.Tile, []byte)) error 
 		visitor(t, data)
 	}
 	return nil
+}
+
+func (o *mbtilesReader) Metadata() (*MbtilesMetadata, error) {
+
+	metadata := make(map[string]string)
+
+	q := "SELECT name, value FROM metadata"
+	rows, err := o.db.Query(q)
+
+	if err != nil {
+		return nil, err
+	}
+
+	for rows.Next() {
+		var name string
+		var value string
+
+		err := rows.Scan(&name, &value)
+
+		if err != nil {
+			return nil, err
+		}
+
+		metadata[name] = value
+	}
+
+	rerr := rows.Close()
+
+	if rerr != nil {
+		return nil, err
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return NewMbtilesMetadata(metadata), nil
 }

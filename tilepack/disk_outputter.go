@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/aaronland/go-string/dsn"
+	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/maptile"
 )
 
@@ -37,6 +38,10 @@ func NewDiskOutputter(dsnStr string) (*diskOutputter, error) {
 	}
 
 	return &o, nil
+}
+
+func (o *diskOutputter) AssignSpatialMetadata(bounds orb.Bound, minZoom maptile.Zoom, maxZoom maptile.Zoom) error {
+	return nil
 }
 
 func (o *diskOutputter) Close() error {

@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/maptile"
-
 	"github.com/tilezen/go-tilepacks/tilepack"
 )
 
@@ -39,6 +39,55 @@ func main() {
 		log.Fatalf("Output path %s already exists and cannot be overwritten", *outputFilename)
 	}
 
+	var outputBounds orb.Bound
+	var outputMinZoom uint
+	var outputMaxZoom uint
+
+	inputReaders := make([]tilepack.MbtilesReader, len(inputFilenames))
+
+	for i, inputFilename := range inputFilenames {
+
+		mbtilesReader, err := tilepack.NewMbtilesReader(inputFilename)
+		if err != nil {
+			log.Fatalf("Couldn't read input mbtiles %s: %+v", inputFilename, err)
+		}
+
+		metadata, err := mbtilesReader.Metadata()
+
+		if err != nil {
+			log.Fatalf("Unable to read metadata for %s, %v", inputFilename, err)
+		}
+
+		bounds, err := metadata.Bounds()
+
+		if err != nil {
+			log.Fatalf("Unable to derive bounds for %s, %v", inputFilename, err)
+		}
+
+		if i == 0 {
+			outputBounds = bounds
+		} else {
+			outputBounds = outputBounds.Union(bounds)
+		}
+
+		minZoom, err := metadata.MinZoom()
+
+		if err != nil {
+			log.Fatalf("Unable to derive min zoom for %s, %v", inputFilename, err)
+		}
+
+		maxZoom, err := metadata.MaxZoom()
+
+		if err != nil {
+			log.Fatalf("Unable to derive max zoom for %s, %v", inputFilename, err)
+		}
+
+		outputMinZoom = min(outputMinZoom, minZoom)
+		outputMaxZoom = min(outputMaxZoom, maxZoom)
+
+		inputReaders[i] = mbtilesReader
+	}
+
 	// Create the output mbtiles
 	outputMbtiles, err := tilepack.NewMbtilesOutputter(*outputFilename, 1000)
 	if err != nil {
@@ -50,19 +99,21 @@ func main() {
 		log.Fatalf("Couldn't create output mbtiles: %+v", err)
 	}
 
-	for _, inputFilename := range inputFilenames {
-		mbtilesReader, err := tilepack.NewMbtilesReader(inputFilename)
-		if err != nil {
-			log.Fatalf("Couldn't read input mbtiles %s: %+v", inputFilename, err)
-		}
+	for i, mbtilesReader := range inputReaders {
 
 		err = mbtilesReader.VisitAllTiles(func(t maptile.Tile, data []byte) {
 			outputMbtiles.Save(t, data)
 		})
 		if err != nil {
-			log.Fatalf("Couldn't read tiles from %s: %+v", inputFilename, err)
+			log.Fatalf("Couldn't read tiles from %s: %+v", inputFilenames[i], err)
 		}
 		mbtilesReader.Close()
+	}
+
+	err = outputMbtiles.AssignSpatialMetadata(outputBounds, maptile.Zoom(outputMinZoom), maptile.Zoom(outputMaxZoom))
+
+	if err != nil {
+		log.Printf("Wrote tiles but failed to assign spatial metadata, %v", err)
 	}
 
 	outputMbtiles.Close()
