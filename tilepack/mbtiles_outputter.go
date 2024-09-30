@@ -4,9 +4,12 @@ import (
 	"crypto/md5"
 	"database/sql"
 	"encoding/hex"
+	"fmt"
 	"math"
+	"strconv"
 
 	_ "github.com/mattn/go-sqlite3" // Register sqlite3 database driver
+	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/maptile"
 )
 
@@ -81,6 +84,38 @@ func (o *mbtilesOutputter) CreateTiles() error {
 		return err
 	}
 	o.hasTiles = true
+	return nil
+}
+
+func (o *mbtilesOutputter) AssignSpatialMetadata(bounds orb.Bound, minZoom maptile.Zoom, maxZoom maptile.Zoom) error {
+
+	// https://github.com/mapbox/mbtiles-spec/blob/master/1.3/spec.md
+
+	center := bounds.Center()
+
+	str_bounds := fmt.Sprintf("%f,%f,%f,%f", bounds.Min[0], bounds.Min[1], bounds.Max[0], bounds.Max[1])
+	str_center := fmt.Sprintf("%f,%f", center[0], center[1])
+
+	str_minzoom := strconv.Itoa(int(minZoom))
+	str_maxzoom := strconv.Itoa(int(maxZoom))
+
+	metadata := map[string]string{
+		"bounds":  str_bounds,
+		"center":  str_center,
+		"minzoom": str_minzoom,
+		"maxzoom": str_maxzoom,
+	}
+
+	for name, value := range metadata {
+
+		q := "INSERT OR REPLACE INTO metadata (name, value) VALUES(?, ?)"
+		_, err := o.db.Exec(q, name, value)
+
+		if err != nil {
+			return fmt.Errorf("Failed to add %s metadata key, %w", name, err)
+		}
+	}
+
 	return nil
 }
 

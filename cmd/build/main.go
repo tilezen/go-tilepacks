@@ -294,6 +294,12 @@ func main() {
 	// Wait for the results to be written out
 	resultWG.Wait()
 	log.Print("Finished processing tiles")
+
+	err = outputter.AssignSpatialMetadata(bounds, zooms[0], zooms[len(zooms)-1])
+
+	if err != nil {
+		log.Printf("Wrote tiles but failed to assign spatial metadata, %v", err)
+	}
 }
 
 func calculateExpectedTiles(bounds orb.Bound, zooms []maptile.Zoom) uint32 {
