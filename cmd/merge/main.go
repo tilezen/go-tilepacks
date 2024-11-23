@@ -42,6 +42,8 @@ func main() {
 	var outputBounds orb.Bound
 	var outputMinZoom uint
 	var outputMaxZoom uint
+	var outputFormat string
+	var outputTilesetName string
 
 	inputReaders := make([]tilepack.MbtilesReader, len(inputFilenames))
 
@@ -56,6 +58,28 @@ func main() {
 
 		if err != nil {
 			log.Fatalf("Unable to read metadata for %s, %v", inputFilename, err)
+		}
+
+		thisFormat, err := metadata.Format()
+		if err != nil {
+			log.Fatalf("Unable to read format for %s, %v", inputFilename, err)
+		}
+
+		if outputFormat == "" {
+			outputFormat = thisFormat
+		} else if outputFormat != thisFormat {
+			log.Fatalf("Input %s has format %s, but consensus output format is %s", inputFilename, thisFormat, outputFormat)
+		}
+
+		thisTilesetName, err := metadata.Name()
+		if err != nil {
+			log.Fatalf("Unable to read name for %s, %v", inputFilename, err)
+		}
+
+		if outputTilesetName == "" {
+			outputTilesetName = thisTilesetName
+		} else {
+			outputTilesetName += "," + thisTilesetName
 		}
 
 		bounds, err := metadata.Bounds()
@@ -88,8 +112,13 @@ func main() {
 		inputReaders[i] = mbtilesReader
 	}
 
+	metadata := tilepack.NewMbtilesMetadata(map[string]string{
+		"name":   outputTilesetName,
+		"format": outputFormat,
+	})
+
 	// Create the output mbtiles
-	outputMbtiles, err := tilepack.NewMbtilesOutputter(*outputFilename, 1000)
+	outputMbtiles, err := tilepack.NewMbtilesOutputter(*outputFilename, 1000, metadata)
 	if err != nil {
 		log.Fatalf("Couldn't create output mbtiles: %+v", err)
 	}
