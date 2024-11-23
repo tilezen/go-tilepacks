@@ -153,3 +153,15 @@ func (m *MbtilesMetadata) MaxZoom() (uint, error) {
 
 	return uint(i), nil
 }
+
+func (m *MbtilesMetadata) Set(key string, value string) {
+	m.metadata[key] = value
+}
+
+func (m *MbtilesMetadata) Format() (string, error) {
+	return m.metadata["format"], nil
+}
+
+func (m *MbtilesMetadata) Name() (string, error) {
+	return m.metadata["name"], nil
+}
