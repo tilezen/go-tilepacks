@@ -107,7 +107,8 @@ func (o *mbtilesOutputter) AssignSpatialMetadata(bounds orb.Bound, minZoom mapti
 	center := bounds.Center()
 
 	strBounds := fmt.Sprintf("%f,%f,%f,%f", bounds.Min[0], bounds.Min[1], bounds.Max[0], bounds.Max[1])
-	strCenter := fmt.Sprintf("%f,%f", center[0], center[1])
+	// Set default center zoom as minZoom level
+	strCenter := fmt.Sprintf("%f,%f,%d", center[0], center[1], minZoom)
 
 	strMinzoom := strconv.Itoa(int(minZoom))
 	strMaxzoom := strconv.Itoa(int(maxZoom))
