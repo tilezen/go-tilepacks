@@ -156,8 +156,27 @@ func (x *xyzJobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, r
 
 			switch contentEncoding {
 			case "gzip":
-				// If the server reports content encoding of gzip, we can just copy the bytes as-is
-				bodyData, err = io.ReadAll(resp.Body)
+				if !x.ensureGzip {
+					// Decompress the gzip response
+					gzipReader, err := gzip.NewReader(resp.Body)
+					if err != nil {
+						log.Printf("Error creating gzip reader: %+v", err)
+						continue
+					}
+
+					bodyData, err = io.ReadAll(gzipReader)
+					gzipReader.Close()
+
+					if err != nil {
+						log.Printf("Couldn't read decompressed bytes: %+v", err)
+						continue
+					}
+
+				} else {
+					// If the server reports content encoding of gzip, we can just copy the bytes as-is
+					bodyData, err = io.ReadAll(resp.Body)
+				}
+
 			default:
 
 				if !x.ensureGzip {
