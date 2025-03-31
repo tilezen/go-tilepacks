@@ -97,6 +97,12 @@ func (p *pmtilesOutputter) Save(tile maptile.Tile, data []byte) error {
 }
 
 func (p *pmtilesOutputter) AssignSpatialMetadata(bound orb.Bound, minZoom maptile.Zoom, maxZoom maptile.Zoom) error {
+	p.header.MaxZoom = uint8(maxZoom)
+	p.header.MinZoom = uint8(minZoom)
+	p.header.MinLonE7 = int32(bound.Min[0] * 1e7)
+	p.header.MinLatE7 = int32(bound.Min[1] * 1e7)
+	p.header.MaxLonE7 = int32(bound.Max[0] * 1e7)
+	p.header.MaxLatE7 = int32(bound.Max[1] * 1e7)
 	return nil
 }
 
@@ -134,7 +140,7 @@ func (p *pmtilesOutputter) Close() error {
 		return err
 	}
 
-	p.header.InternalCompression = pmtiles.Gzip
+	p.header.InternalCompression = pmtiles.NoCompression
 	if p.header.TileType == pmtiles.Mvt {
 		p.header.InternalCompression = pmtiles.Gzip
 	}
@@ -146,6 +152,7 @@ func (p *pmtilesOutputter) Close() error {
 	p.header.LeafDirectoryLength = uint64(len(leavesBytes))
 	p.header.TileDataOffset = p.header.LeafDirectoryOffset + p.header.LeafDirectoryLength
 	p.header.TileDataLength = uint64(offset)
+	p.header.SpecVersion = 3
 
 	headerBytes := pmtiles.SerializeHeader(p.header)
 
@@ -169,7 +176,7 @@ func (p *pmtilesOutputter) Close() error {
 		return fmt.Errorf("error writing pmtiles leaf directory: %w", err)
 	}
 
-	_, err = p.tileData.Seek(offset, io.SeekStart)
+	_, err = p.tileData.Seek(0, io.SeekStart)
 	if err != nil {
 		return fmt.Errorf("error seeking to start of tile data: %w", err)
 	}
@@ -236,7 +243,7 @@ func buildRootsLeaves(entries []pmtiles.EntryV3, leafSize int, compression pmtil
 	return rootBytes, leavesBytes, numLeaves
 }
 
-func NewPmtilesOutputter(dsn string, metadata *MbtilesMetadata) (*pmtilesOutputter, error) {
+func NewPmtilesOutputter(dsn string, outputType string, metadata *MbtilesMetadata) (*pmtilesOutputter, error) {
 	tmpFile, err := os.CreateTemp("", "pmtiles-tiledata")
 	if err != nil {
 		return nil, fmt.Errorf("error creating temp file: %w", err)
@@ -256,5 +263,15 @@ func NewPmtilesOutputter(dsn string, metadata *MbtilesMetadata) (*pmtilesOutputt
 		entries:   make([]pmtiles.EntryV3, 0),
 		header:    pmtiles.HeaderV3{},
 	}
+
+	switch outputType {
+	case "mvt":
+		outputter.header.TileType = pmtiles.Mvt
+		outputter.header.InternalCompression = pmtiles.Gzip
+	case "png":
+		outputter.header.TileType = pmtiles.Png
+		outputter.header.InternalCompression = pmtiles.NoCompression
+	}
+
 	return outputter, nil
 }

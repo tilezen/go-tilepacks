@@ -270,7 +270,7 @@ func main() {
 		}
 		metadata.Set("name", *mbtilesTilesetName)
 
-		outputter, outputterErr = tilepack.NewPmtilesOutputter(*outputDSN, metadata)
+		outputter, outputterErr = tilepack.NewPmtilesOutputter(*outputDSN, *outputFormat, metadata)
 	default:
 		log.Fatalf("Unknown outputter: %s", *outputMode)
 	}
