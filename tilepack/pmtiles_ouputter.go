@@ -12,6 +12,7 @@ import (
 	"hash/fnv"
 	"io"
 	"os"
+	"sort"
 )
 
 type offsetLen struct {
@@ -36,10 +37,8 @@ func (p *pmtilesOutputter) CreateTiles() error {
 }
 
 func (p *pmtilesOutputter) Save(tile maptile.Tile, data []byte) error {
-	flippedY := (1 << uint(tile.Z)) - 1 - tile.Y
-
 	// Store tile IDs so we can iterate through them in the correct order later
-	id := pmtiles.ZxyToID(uint8(tile.Z), tile.X, flippedY)
+	id := pmtiles.ZxyToID(uint8(tile.Z), tile.X, tile.Y)
 	p.tileset.Add(id)
 
 	// Hash the tile data to use as a key for dedupe
@@ -59,7 +58,7 @@ func (p *pmtilesOutputter) Save(tile maptile.Tile, data []byte) error {
 
 		// Compress the data if it isn't already
 		var newData []byte
-		if len(data) >= 2 && data[0] == 31 && data[1] == 139 {
+		if p.header.TileCompression == pmtiles.NoCompression || len(data) >= 2 && data[0] == 31 && data[1] == 139 {
 			// data is already compressed
 			newData = data
 		} else {
@@ -114,6 +113,11 @@ func (p *pmtilesOutputter) Close() error {
 
 	defer p.outFile.Close()
 
+	// Sort the entries by tile ID
+	sort.Slice(p.entries, func(i, j int) bool {
+		return p.entries[i].TileID < p.entries[j].TileID
+	})
+
 	rootBytes, leavesBytes, numLeaves := optimizeDirectories(p.entries, 16384-pmtiles.HeaderV3LenBytes, pmtiles.Gzip)
 
 	if numLeaves > 0 {
@@ -140,10 +144,7 @@ func (p *pmtilesOutputter) Close() error {
 		return err
 	}
 
-	p.header.InternalCompression = pmtiles.NoCompression
-	if p.header.TileType == pmtiles.Mvt {
-		p.header.InternalCompression = pmtiles.Gzip
-	}
+	p.header.InternalCompression = pmtiles.Gzip
 	p.header.RootOffset = pmtiles.HeaderV3LenBytes
 	p.header.RootLength = uint64(len(rootBytes))
 	p.header.MetadataOffset = p.header.RootOffset + p.header.RootLength
@@ -267,10 +268,10 @@ func NewPmtilesOutputter(dsn string, outputType string, metadata *MbtilesMetadat
 	switch outputType {
 	case "mvt":
 		outputter.header.TileType = pmtiles.Mvt
-		outputter.header.InternalCompression = pmtiles.Gzip
+		outputter.header.TileCompression = pmtiles.Gzip
 	case "png":
 		outputter.header.TileType = pmtiles.Png
-		outputter.header.InternalCompression = pmtiles.NoCompression
+		outputter.header.TileCompression = pmtiles.NoCompression
 	}
 
 	return outputter, nil
