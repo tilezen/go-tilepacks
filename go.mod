@@ -7,12 +7,16 @@ require (
 	github.com/aws/aws-sdk-go v1.55.8
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/paulmach/orb v0.12.0
+	github.com/protomaps/go-pmtiles v1.27.0
 	github.com/schollz/progressbar/v3 v3.18.0
 )
 
 require (
+	github.com/RoaringBitmap/roaring v1.5.0 // indirect
+	github.com/bits-and-blooms/bitset v1.2.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
+	github.com/mschoch/smat v0.2.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	go.mongodb.org/mongo-driver v1.17.7 // indirect
 	golang.org/x/sys v0.29.0 // indirect
