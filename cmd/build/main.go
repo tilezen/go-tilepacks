@@ -247,7 +247,7 @@ func main() {
 		}
 		metadata.Set("format", *outputFormat)
 
-		if *mbtilesFormat != "pbf" && *ensureGzip {
+		if *outputFormat != "pbf" && *ensureGzip {
 			log.Printf("Warning: gzipping is only required for PBF tiles. You may want to disable it for other formats with --ensure-gzip=false")
 		}
 
@@ -264,6 +264,10 @@ func main() {
 			log.Fatalf("--output-format is required for pmtiles output")
 		}
 		metadata.Set("format", *outputFormat)
+
+		if *outputFormat != "pbf" && *ensureGzip {
+			log.Printf("Warning: gzipping is only required for PBF tiles. You may want to disable it for other formats with --ensure-gzip=false")
+		}
 
 		if *mbtilesTilesetName == "" {
 			log.Fatalf("--tileset-name is required for pmtiles output")
