@@ -37,14 +37,15 @@ func processResults(results chan *tilepack.TileResponse, processor tilepack.Tile
 func main() {
 	generatorStr := flag.String("generator", "xyz", "Which tile fetcher to use. Options are xyz, metatile, tapalcatl2.")
 	fileTransportRoot := flag.String("file-transport-root", "", "The root directory for tiles if -url-template defines a file:// URL scheme")
-	outputMode := flag.String("output-mode", "mbtiles", "Valid modes are: disk, mbtiles.")
+	outputMode := flag.String("output-mode", "mbtiles", "Valid modes are: disk, mbtiles, pmtiles.")
 	outputDSN := flag.String("dsn", "", "Path, or DSN string, to output files.")
 	boundingBoxStr := flag.String("bounds", "-90.0,-180.0,90.0,180.0", "Comma-separated bounding box in south,west,north,east format. Defaults to the whole world.")
 	zoomsStr := flag.String("zooms", "0,1,2,3,4,5,6,7,8,9,10", "Comma-separated list of zoom levels or a '{MIN_ZOOM}-{MAX_ZOOM}' range string.")
 	numTileFetchWorkers := flag.Int("workers", 25, "Number of tile fetch workers to use.")
 	mbtilesBatchSize := flag.Int("batch-size", 50, "(For mbtiles outputter) Number of tiles to batch together before writing to mbtiles")
 	mbtilesTilesetName := flag.String("tileset-name", "tileset", "(For mbtiles outputter) Name of the tileset to write to the mbtiles file metadata.")
-	mbtilesFormat := flag.String("mbtiles-format", "pbf", "(For mbtiles outputter) Format of the tiles in the mbtiles file metadata.")
+	mbtilesFormat := flag.String("mbtiles-format", "pbf", "(Deprecated. Use --output-format instead)")
+	outputFormat := flag.String("output-format", "pbf", "(For mbtiles and pmtiles outputter) Format of the tiles in the mbtiles or pmtiles file metadata.")
 	requestTimeout := flag.Int("timeout", 60, "HTTP client timeout for tile requests.")
 	cpuProfile := flag.String("cpuprofile", "", "Enables CPU profiling. Saves the dump to the given path.")
 	invertedY := flag.Bool("inverted-y", false, "Invert the Y-value of tiles to match the TMS (as opposed to ZXY) tile format.")
@@ -235,12 +236,18 @@ func main() {
 	case "mbtiles":
 		metadata := tilepack.NewMbtilesMetadata(map[string]string{})
 
-		if *mbtilesFormat == "" {
-			log.Fatalf("--mbtiles-format is required for mbtiles output")
+		// mbtilesFormat is deprecated, use outputFormat instead
+		if *mbtilesFormat != "" {
+			log.Printf("Warning: --mbtiles-format is deprecated, use --output-format instead")
+			*outputFormat = *mbtilesFormat
 		}
-		metadata.Set("format", *mbtilesFormat)
 
-		if *mbtilesFormat != "pbf" && *ensureGzip {
+		if *outputFormat == "" {
+			log.Fatalf("--output-format is required for mbtiles output")
+		}
+		metadata.Set("format", *outputFormat)
+
+		if *outputFormat != "pbf" && *ensureGzip {
 			log.Printf("Warning: gzipping is only required for PBF tiles. You may want to disable it for other formats with --ensure-gzip=false")
 		}
 
@@ -250,6 +257,24 @@ func main() {
 		metadata.Set("name", *mbtilesTilesetName)
 
 		outputter, outputterErr = tilepack.NewMbtilesOutputter(*outputDSN, *mbtilesBatchSize, metadata)
+	case "pmtiles":
+		metadata := tilepack.NewMbtilesMetadata(map[string]string{})
+
+		if *outputFormat == "" {
+			log.Fatalf("--output-format is required for pmtiles output")
+		}
+		metadata.Set("format", *outputFormat)
+
+		if *outputFormat != "pbf" && *ensureGzip {
+			log.Printf("Warning: gzipping is only required for PBF tiles. You may want to disable it for other formats with --ensure-gzip=false")
+		}
+
+		if *mbtilesTilesetName == "" {
+			log.Fatalf("--tileset-name is required for pmtiles output")
+		}
+		metadata.Set("name", *mbtilesTilesetName)
+
+		outputter, outputterErr = tilepack.NewPmtilesOutputter(*outputDSN, *outputFormat, metadata)
 	default:
 		log.Fatalf("Unknown outputter: %s", *outputMode)
 	}
