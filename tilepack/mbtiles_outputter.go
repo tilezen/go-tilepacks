@@ -35,6 +35,20 @@ type mbtilesOutputter struct {
 func (o *mbtilesOutputter) Close() error {
 	var err error
 
+	// Commit remaining tile transaction if it exists
+	if o.txn != nil {
+		if err = o.txn.Commit(); err != nil {
+			return fmt.Errorf("failed to commit final tile batch: %w", err)
+		}
+		o.txn = nil
+	}
+
+	// Start a new transaction for metadata
+	o.txn, err = o.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin metadata transaction: %w", err)
+	}
+
 	// Save the metadata
 	for name, value := range o.metadata.metadata {
 		q := "INSERT OR REPLACE INTO metadata (name, value) VALUES(?, ?)"
@@ -163,6 +177,8 @@ func (o *mbtilesOutputter) Save(tile maptile.Tile, data []byte) error {
 			return err
 		}
 		o.batchCount = 0
+		// NOTE if the total tiles to download are a multiple of batchSize,
+		// this will run and set o.txn to nil prior to .Close() being called
 		o.txn = nil
 	}
 
