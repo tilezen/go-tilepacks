@@ -34,7 +34,15 @@ const (
 	httpUserAgent = "go-tilepacks/1.0"
 )
 
-func NewXYZJobGenerator(urlTemplate string, bounds orb.Bound, zooms []maptile.Zoom, httpTimeout time.Duration, invertedY bool, ensureGzip bool) (JobGenerator, error) {
+func NewXYZJobGenerator(
+	urlTemplate string,
+	bounds orb.Bound,
+	zooms []maptile.Zoom,
+	httpTimeout time.Duration,
+	invertedY bool,
+	ensureGzip bool,
+	mbtilesFormat string,
+) (JobGenerator, error) {
 	// Configure the HTTP client with a timeout and connection pools
 	httpClient := &http.Client{}
 	httpClient.Timeout = httpTimeout
@@ -45,12 +53,13 @@ func NewXYZJobGenerator(urlTemplate string, bounds orb.Bound, zooms []maptile.Zo
 	httpClient.Transport = httpTransport
 
 	return &xyzJobGenerator{
-		httpClient:  httpClient,
-		urlTemplate: urlTemplate,
-		bounds:      bounds,
-		zooms:       zooms,
-		invertedY:   invertedY,
-		ensureGzip:  ensureGzip,
+		httpClient:     httpClient,
+		urlTemplate:    urlTemplate,
+		bounds:         bounds,
+		zooms:          zooms,
+		invertedY:      invertedY,
+		ensureGzip:     ensureGzip,
+		mbtilesFormat:  mbtilesFormat,
 	}, nil
 }
 
@@ -84,12 +93,13 @@ func NewFileTransportXYZJobGenerator(root string, urlTemplate string, bounds orb
 }
 
 type xyzJobGenerator struct {
-	httpClient  *http.Client
-	urlTemplate string
-	bounds      orb.Bound
-	zooms       []maptile.Zoom
-	invertedY   bool
-	ensureGzip  bool
+	httpClient    *http.Client
+	urlTemplate   string
+	bounds        orb.Bound
+	zooms         []maptile.Zoom
+	invertedY     bool
+	ensureGzip    bool
+	mbtilesFormat string
 }
 
 func doHTTPWithRetry(client *http.Client, request *http.Request, nRetries int) (*http.Response, error) {
@@ -156,8 +166,27 @@ func (x *xyzJobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, r
 
 			switch contentEncoding {
 			case "gzip":
-				// If the server reports content encoding of gzip, we can just copy the bytes as-is
-				bodyData, err = io.ReadAll(resp.Body)
+				if x.mbtilesFormat != "pbf" {
+					// Decompress the gzip response for non-vector formats
+					gzipReader, err := gzip.NewReader(resp.Body)
+					if err != nil {
+						log.Printf("Error creating gzip reader: %+v", err)
+						continue
+					}
+
+					bodyData, err = io.ReadAll(gzipReader)
+					gzipReader.Close()
+
+					if err != nil {
+						log.Printf("Couldn't read decompressed bytes: %+v", err)
+						continue
+					}
+
+				} else {
+					// Keep gzipped response as-is for PBF
+					bodyData, err = io.ReadAll(resp.Body)
+				}
+
 			default:
 
 				if !x.ensureGzip {
