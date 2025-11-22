@@ -1,0 +1,29 @@
+name: goreleaser
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+
+    container:
+      image: docker.io/goreleaser/goreleaser-cross:v1.23
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Required because of https://github.com/actions/checkout/issues/766
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+          goreleaser release

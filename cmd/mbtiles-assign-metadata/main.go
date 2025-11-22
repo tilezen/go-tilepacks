@@ -50,7 +50,9 @@ func main() {
 
 		mbtilesReader.Close()
 
-		mbtilesWriter, err := tilepack.NewMbtilesOutputter(path, 0)
+		metadata := tilepack.NewMbtilesMetadata(map[string]string{})
+
+		mbtilesWriter, err := tilepack.NewMbtilesOutputter(path, 0, metadata)
 
 		if err != nil {
 			log.Fatalf("Couldn't read input mbtiles %s: %+v", path, err)
@@ -84,7 +86,7 @@ func main() {
 				log.Fatalf("Failed to derive bounds metadata after update")
 			}
 
-			center, err := metadata.Center()
+			center, zoom, err := metadata.Center()
 
 			if err != nil {
 				log.Fatalf("Failed to derive bounds metadata after update")
@@ -102,7 +104,7 @@ func main() {
 				log.Fatalf("Failed to derive max zoom metadata after update")
 			}
 
-			log.Printf("[%s] bounds: %v center: %v zoom: %d-%d\n", path, bounds, center, minZoom, maxZoom)
+			log.Printf("[%s] bounds: %v center: %v@%d zoom: %d-%d\n", path, bounds, center, zoom, minZoom, maxZoom)
 		}
 	}
 }

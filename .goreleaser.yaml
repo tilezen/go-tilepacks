@@ -1,0 +1,128 @@
+version: 2
+
+env:
+- CGO_ENABLED=1
+
+builds:
+  # MacOS AMD64
+  - id: tilepack-darwin-amd64
+    binary: tilepack
+    main: cmd/build/main.go
+    goarch:
+      - amd64
+    goos:
+      - darwin
+    env:
+      - CC=o64-clang
+      - CXX=o64-clang++
+    flags:
+      - -trimpath
+
+  # MacOS ARM64
+  - id: tilepack-darwin-arm64
+    binary: tilepack
+    main: cmd/build/main.go
+    goarch:
+      - arm64
+    goos:
+      - darwin
+    env:
+      - CC=oa64-clang
+      - CXX=oa64-clang++
+    flags:
+      - -trimpath
+
+  # Linux AMD64
+  - id: tilepack-linux-amd64
+    binary: tilepack
+    main: cmd/build/main.go
+    env:
+      - CC=x86_64-linux-gnu-gcc
+      - CXX=x86_64-linux-gnu-g++
+    goarch:
+      - amd64
+    goos:
+      - linux
+    flags:
+      - -trimpath
+    ldflags:
+      - -extldflags "-lc -lrt -lpthread --static"
+
+  # Linux ARM64
+  - id: tilepack-linux-arm64
+    binary: tilepack
+    main: cmd/build/main.go
+    goarch:
+      - arm64
+    goos:
+      - linux
+    env:
+      - CC=aarch64-linux-gnu-gcc
+      - CXX=aarch64-linux-gnu-g++
+    flags:
+      - -trimpath
+    ldflags:
+      - -extldflags "-lc -lrt -lpthread --static"
+
+  # Windows AMD64
+  - id: tilepack-windows-amd64
+    binary: tilepack
+    main: cmd/build/main.go
+    goarch:
+      - amd64
+    goos:
+      - windows
+    env:
+      - CC=x86_64-w64-mingw32-gcc
+      - CXX=x86_64-w64-mingw32-g++
+    flags:
+      - -trimpath
+      - -buildmode=exe
+
+  # Windows ARM64
+  - id: tilepack-windows-arm64
+    binary: tilepack
+    main: cmd/build/main.go
+    goarch:
+      - arm64
+    goos:
+      - windows
+    env:
+      - CC=/llvm-mingw/bin/aarch64-w64-mingw32-gcc
+      - CXX=/llvm-mingw/bin/aarch64-w64-mingw32-g++
+    flags:
+      - -trimpath
+      - -buildmode=exe
+
+archives:
+  - name_template: "tilepack_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    builds:
+      - tilepack-darwin-amd64
+      - tilepack-darwin-arm64
+      - tilepack-linux-amd64
+      - tilepack-linux-arm64
+      - tilepack-windows-amd64
+      - tilepack-windows-arm64
+    wrap_in_directory: false
+    format: tar.gz
+    # use zip for windows archives
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - none*
+
+checksum:
+  name_template: 'checksums.txt'
+gitlab_urls:
+  use_package_registry: true
+snapshot:
+  version_template: '{{ .Tag }}-next'
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^.github:'
+      - '^vendor:'

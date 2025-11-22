@@ -30,11 +30,6 @@ func processResults(results chan *tilepack.TileResponse, processor tilepack.Tile
 		progress.Add(1)
 	}
 
-	err := processor.Close()
-	if err != nil {
-		log.Printf("Error closing processor: %+v", err)
-	}
-
 	progress.Finish()
 	log.Printf("Processed %d tiles", tileCount)
 }
@@ -48,6 +43,8 @@ func main() {
 	zoomsStr := flag.String("zooms", "0,1,2,3,4,5,6,7,8,9,10", "Comma-separated list of zoom levels or a '{MIN_ZOOM}-{MAX_ZOOM}' range string.")
 	numTileFetchWorkers := flag.Int("workers", 25, "Number of tile fetch workers to use.")
 	mbtilesBatchSize := flag.Int("batch-size", 50, "(For mbtiles outputter) Number of tiles to batch together before writing to mbtiles")
+	mbtilesTilesetName := flag.String("tileset-name", "tileset", "(For mbtiles outputter) Name of the tileset to write to the mbtiles file metadata.")
+	mbtilesFormat := flag.String("mbtiles-format", "pbf", "(For mbtiles outputter) Format of the tiles in the mbtiles file metadata.")
 	requestTimeout := flag.Int("timeout", 60, "HTTP client timeout for tile requests.")
 	cpuProfile := flag.String("cpuprofile", "", "Enables CPU profiling. Saves the dump to the given path.")
 	invertedY := flag.Bool("inverted-y", false, "Invert the Y-value of tiles to match the TMS (as opposed to ZXY) tile format.")
@@ -158,7 +155,7 @@ func main() {
 
 			jobCreator, err = tilepack.NewFileTransportXYZJobGenerator(*fileTransportRoot, *urlTemplateStr, bounds, zooms, time.Duration(*requestTimeout)*time.Second, *invertedY, *ensureGzip)
 		} else {
-			jobCreator, err = tilepack.NewXYZJobGenerator(*urlTemplateStr, bounds, zooms, time.Duration(*requestTimeout)*time.Second, *invertedY, *ensureGzip)
+			jobCreator, err = tilepack.NewXYZJobGenerator(*urlTemplateStr, bounds, zooms, time.Duration(*requestTimeout)*time.Second, *invertedY, *ensureGzip, *mbtilesFormat)
 		}
 
 	case "metatile":
@@ -236,7 +233,23 @@ func main() {
 	case "disk":
 		outputter, outputterErr = tilepack.NewDiskOutputter(*outputDSN)
 	case "mbtiles":
-		outputter, outputterErr = tilepack.NewMbtilesOutputter(*outputDSN, *mbtilesBatchSize)
+		metadata := tilepack.NewMbtilesMetadata(map[string]string{})
+
+		if *mbtilesFormat == "" {
+			log.Fatalf("--mbtiles-format is required for mbtiles output")
+		}
+		metadata.Set("format", *mbtilesFormat)
+
+		if *mbtilesFormat != "pbf" && *ensureGzip {
+			log.Printf("Warning: gzipping is only required for PBF tiles. You may want to disable it for other formats with --ensure-gzip=false")
+		}
+
+		if *mbtilesTilesetName == "" {
+			log.Fatalf("--tileset-name is required for mbtiles output")
+		}
+		metadata.Set("name", *mbtilesTilesetName)
+
+		outputter, outputterErr = tilepack.NewMbtilesOutputter(*outputDSN, *mbtilesBatchSize, metadata)
 	default:
 		log.Fatalf("Unknown outputter: %s", *outputMode)
 	}
@@ -296,9 +309,13 @@ func main() {
 	log.Print("Finished processing tiles")
 
 	err = outputter.AssignSpatialMetadata(bounds, zooms[0], zooms[len(zooms)-1])
-
 	if err != nil {
 		log.Printf("Wrote tiles but failed to assign spatial metadata, %v", err)
+	}
+
+	err = outputter.Close()
+	if err != nil {
+		log.Printf("Error closing processor: %+v", err)
 	}
 }
 

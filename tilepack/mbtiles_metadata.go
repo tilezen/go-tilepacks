@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/paulmach/orb"
+	"github.com/paulmach/orb/maptile"
 )
 
 type MbtilesMetadata struct {
@@ -88,36 +89,44 @@ func (m *MbtilesMetadata) Bounds() (orb.Bound, error) {
 	return bounds, nil
 }
 
-func (m *MbtilesMetadata) Center() (orb.Point, error) {
+func (m *MbtilesMetadata) Center() (orb.Point, maptile.Zoom, error) {
 
 	var pt orb.Point
+	var z maptile.Zoom
 
-	str_center, exists := m.Get("center")
+	strCenter, exists := m.Get("center")
 
 	if !exists {
-		return pt, fmt.Errorf("Metadata is missing center")
+		return pt, z, fmt.Errorf("Metadata is missing center")
 	}
 
-	parts := strings.Split(str_center, ",")
+	parts := strings.Split(strCenter, ",")
 
-	if len(parts) != 2 {
-		return pt, fmt.Errorf("Invalid center metadata")
+	if len(parts) != 3 {
+		return pt, z, fmt.Errorf("Invalid center metadata")
 	}
 
 	x, err := strconv.ParseFloat(parts[0], 64)
 
 	if err != nil {
-		return pt, fmt.Errorf("Failed to parse x, %w", err)
+		return pt, z, fmt.Errorf("Failed to parse x, %w", err)
 	}
 
 	y, err := strconv.ParseFloat(parts[1], 64)
 
 	if err != nil {
-		return pt, fmt.Errorf("Failed to parse y, %w", err)
+		return pt, z, fmt.Errorf("Failed to parse y, %w", err)
 	}
 
-	pt = orb.Point([2]float64{x, y})
-	return pt, nil
+	zFloat, err := strconv.ParseFloat(parts[2], 64)
+	z = maptile.Zoom(zFloat)
+
+	if err != nil {
+		return pt, z, fmt.Errorf("Failed to parse zoom, %w", err)
+	}
+
+	pt = [2]float64{x, y}
+	return pt, z, nil
 }
 
 func (m *MbtilesMetadata) MinZoom() (uint, error) {
@@ -152,4 +161,16 @@ func (m *MbtilesMetadata) MaxZoom() (uint, error) {
 	}
 
 	return uint(i), nil
+}
+
+func (m *MbtilesMetadata) Set(key string, value string) {
+	m.metadata[key] = value
+}
+
+func (m *MbtilesMetadata) Format() (string, error) {
+	return m.metadata["format"], nil
+}
+
+func (m *MbtilesMetadata) Name() (string, error) {
+	return m.metadata["name"], nil
 }

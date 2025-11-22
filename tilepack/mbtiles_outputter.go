@@ -13,13 +13,13 @@ import (
 	"github.com/paulmach/orb/maptile"
 )
 
-func NewMbtilesOutputter(dsn string, batchSize int) (*mbtilesOutputter, error) {
+func NewMbtilesOutputter(dsn string, batchSize int, metadata *MbtilesMetadata) (*mbtilesOutputter, error) {
 	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	return &mbtilesOutputter{db: db, batchSize: batchSize}, nil
+	return &mbtilesOutputter{db: db, batchSize: batchSize, metadata: metadata}, nil
 }
 
 type mbtilesOutputter struct {
@@ -29,15 +29,42 @@ type mbtilesOutputter struct {
 	hasTiles   bool
 	batchCount int
 	batchSize  int
+	metadata   *MbtilesMetadata
 }
 
 func (o *mbtilesOutputter) Close() error {
 	var err error
 
+	// Commit remaining tile transaction if it exists
+	if o.txn != nil {
+		if err = o.txn.Commit(); err != nil {
+			return fmt.Errorf("failed to commit final tile batch: %w", err)
+		}
+		o.txn = nil
+	}
+
+	// Start a new transaction for metadata
+	o.txn, err = o.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin metadata transaction: %w", err)
+	}
+
+	// Save the metadata
+	for name, value := range o.metadata.metadata {
+		q := "INSERT OR REPLACE INTO metadata (name, value) VALUES(?, ?)"
+		_, err = o.txn.Exec(q, name, value)
+
+		if err != nil {
+			return fmt.Errorf("failed to add %s metadata key: %w", name, err)
+		}
+	}
+
+	// Commit the transaction
 	if o.txn != nil {
 		err = o.txn.Commit()
 	}
 
+	// Close the database
 	if o.db != nil {
 		if err2 := o.db.Close(); err2 != nil {
 			err = err2
@@ -93,27 +120,22 @@ func (o *mbtilesOutputter) AssignSpatialMetadata(bounds orb.Bound, minZoom mapti
 
 	center := bounds.Center()
 
-	str_bounds := fmt.Sprintf("%f,%f,%f,%f", bounds.Min[0], bounds.Min[1], bounds.Max[0], bounds.Max[1])
-	str_center := fmt.Sprintf("%f,%f", center[0], center[1])
+	strBounds := fmt.Sprintf("%f,%f,%f,%f", bounds.Min[0], bounds.Min[1], bounds.Max[0], bounds.Max[1])
+	// Set default center zoom as minZoom level
+	strCenter := fmt.Sprintf("%f,%f,%d", center[0], center[1], minZoom)
 
-	str_minzoom := strconv.Itoa(int(minZoom))
-	str_maxzoom := strconv.Itoa(int(maxZoom))
+	strMinzoom := strconv.Itoa(int(minZoom))
+	strMaxzoom := strconv.Itoa(int(maxZoom))
 
 	metadata := map[string]string{
-		"bounds":  str_bounds,
-		"center":  str_center,
-		"minzoom": str_minzoom,
-		"maxzoom": str_maxzoom,
+		"bounds":  strBounds,
+		"center":  strCenter,
+		"minzoom": strMinzoom,
+		"maxzoom": strMaxzoom,
 	}
 
 	for name, value := range metadata {
-
-		q := "INSERT OR REPLACE INTO metadata (name, value) VALUES(?, ?)"
-		_, err := o.db.Exec(q, name, value)
-
-		if err != nil {
-			return fmt.Errorf("Failed to add %s metadata key, %w", name, err)
-		}
+		o.metadata.Set(name, value)
 	}
 
 	return nil
@@ -155,6 +177,8 @@ func (o *mbtilesOutputter) Save(tile maptile.Tile, data []byte) error {
 			return err
 		}
 		o.batchCount = 0
+		// NOTE if the total tiles to download are a multiple of batchSize,
+		// this will run and set o.txn to nil prior to .Close() being called
 		o.txn = nil
 	}
 
