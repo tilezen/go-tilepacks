@@ -3,8 +3,6 @@ package tilepack
 import (
 	"math"
 
-	"log/slog"
-	
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/maptile"
 )
@@ -49,8 +47,6 @@ func GenerateTileRanges(opts *GenerateRangesOptions) {
 		boxes = []orb.Bound{bounds}
 	}
 
-	slog.Info("RANGE", "boxes", boxes)
-	
 	for _, box := range boxes {
 		// Clamp the individual boxes to web mercator limits
 		clampedBox := orb.Bound{
@@ -64,8 +60,6 @@ func GenerateTileRanges(opts *GenerateRangesOptions) {
 			},
 		}
 
-		slog.Info("CLAMP", "box",  box, "clamped", clampedBox)
-		
 		for _, z := range zooms {
 			minTile := maptile.At(clampedBox.Min, z)
 			maxTile := maptile.At(clampedBox.Max, z)
@@ -73,7 +67,6 @@ func GenerateTileRanges(opts *GenerateRangesOptions) {
 			// Flip Y because the XYZ tiling scheme has an inverted Y compared to lat/lon
 			maxTile.Y, minTile.Y = minTile.Y, maxTile.Y
 
-			// slog.Info("CONSUMER", "min", minTile, "max", maxTile, "zoom", z, "count", (maxTile.X - minTile.X) * (maxTile.Y - minTile.Y))
 			consumer(minTile, maxTile, z)
 		}
 	}
@@ -87,36 +80,20 @@ func GenerateTiles(opts *GenerateTilesOptions) {
 
 	rangeOpts.ConsumerFunc = func(minTile maptile.Tile, maxTile maptile.Tile, z maptile.Zoom) {
 
-		// slog.Info("DO CONSUME", "min", minTile, "max", maxTile, "zoom", z, "count", (maxTile.X - minTile.X) * (maxTile.Y - minTile.Y))
-
-		i := 0
-
-		// slog.Info("DO CONSUME", "count x", (maxTile.X - minTile.X), "count y", (maxTile.Y - minTile.Y))
-		
 		for x := minTile.X; x <= maxTile.X; x++ {
 
-			j := 0
-
-			slog.Info("X", "min y", minTile.Y, "max y", maxTile.Y)
-			
 			for y := minTile.Y; y <= maxTile.Y; y++ {
 
 				tile_y := y
-				
+
 				if opts.InvertedY {
 					// https://gist.github.com/tmcw/4954720
 					tile_y = uint32(math.Pow(2.0, float64(z))) - 1 - y
-					slog.Info("NEW Y", "i", i, "x", x, "y", y, "tile_y", tile_y)
 				}
 
-				// slog.Info("CONDUME FUNC", "i", i, "j", j, "x", x, "y", y, "z", z)
 				opts.ConsumerFunc(maptile.New(x, tile_y, z))
-				i++
-				j++
-			}			
+			}
 		}
-
-		slog.Info("DID CONSUME", "count", i)
 	}
 
 	GenerateTileRanges(rangeOpts)
