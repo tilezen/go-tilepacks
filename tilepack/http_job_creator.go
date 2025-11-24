@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"log/slog"
+	
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/maptile"
 )
@@ -82,6 +84,7 @@ func NewFileTransportXYZJobGenerator(root string, urlTemplate string, bounds orb
 	httpTransport.RegisterProtocol("file", http.NewFileTransport(http.Dir(root)))
 	httpClient.Transport = httpTransport
 
+	slog.Info("JOB CREATOR", "bounds", bounds, "zooms", zooms)
 	return &xyzJobGenerator{
 		httpClient:  httpClient,
 		urlTemplate: urlTemplate,
@@ -261,6 +264,7 @@ func (x *xyzJobGenerator) CreateJobs(jobs chan *TileRequest) error {
 		InvertedY:    x.invertedY,
 	}
 
+	slog.Info("GENERATE TILES", "opts", opts)
 	GenerateTiles(opts)
 
 	return nil

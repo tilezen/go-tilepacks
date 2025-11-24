@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
-	"math"
+	_ "math"
 	"strconv"
 
 	_ "github.com/mattn/go-sqlite3" // Register sqlite3 database driver
@@ -157,8 +157,10 @@ func (o *mbtilesOutputter) Save(tile maptile.Tile, data []byte) error {
 	hash := md5.Sum(data)
 	tileID := hex.EncodeToString(hash[:])
 
-	invertedY := uint32(math.Pow(2.0, float64(tile.Z))) - 1 - tile.Y
+	// invertedY := uint32(math.Pow(2.0, float64(tile.Z))) - 1 - tile.Y
 
+	invertedY := tile.Y
+	
 	_, err := o.txn.Exec("INSERT OR REPLACE INTO images (tile_id, tile_data) VALUES (?, ?);", tileID, data)
 	if err != nil {
 		return err
