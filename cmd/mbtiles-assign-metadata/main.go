@@ -52,7 +52,7 @@ func main() {
 
 		metadata := tilepack.NewMbtilesMetadata(map[string]string{})
 
-		mbtilesWriter, err := tilepack.NewMbtilesOutputter(path, 0, metadata)
+		mbtilesWriter, err := tilepack.NewMbtilesOutputter(path, 0, false, metadata)
 
 		if err != nil {
 			log.Fatalf("Couldn't read input mbtiles %s: %+v", path, err)

@@ -53,13 +53,13 @@ func NewXYZJobGenerator(
 	httpClient.Transport = httpTransport
 
 	return &xyzJobGenerator{
-		httpClient:     httpClient,
-		urlTemplate:    urlTemplate,
-		bounds:         bounds,
-		zooms:          zooms,
-		invertedY:      invertedY,
-		ensureGzip:     ensureGzip,
-		mbtilesFormat:  mbtilesFormat,
+		httpClient:    httpClient,
+		urlTemplate:   urlTemplate,
+		bounds:        bounds,
+		zooms:         zooms,
+		invertedY:     invertedY,
+		ensureGzip:    ensureGzip,
+		mbtilesFormat: mbtilesFormat,
 	}, nil
 }
 

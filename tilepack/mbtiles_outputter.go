@@ -13,13 +13,13 @@ import (
 	"github.com/paulmach/orb/maptile"
 )
 
-func NewMbtilesOutputter(dsn string, batchSize int, metadata *MbtilesMetadata) (*mbtilesOutputter, error) {
+func NewMbtilesOutputter(dsn string, batchSize int, invertedY bool, metadata *MbtilesMetadata) (*mbtilesOutputter, error) {
 	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	return &mbtilesOutputter{db: db, batchSize: batchSize, metadata: metadata}, nil
+	return &mbtilesOutputter{db: db, batchSize: batchSize, metadata: metadata, invertedY: invertedY}, nil
 }
 
 type mbtilesOutputter struct {
@@ -30,6 +30,11 @@ type mbtilesOutputter struct {
 	batchCount int
 	batchSize  int
 	metadata   *MbtilesMetadata
+	invertedY  bool
+}
+
+func (o *mbtilesOutputter) SetInvertedY(v bool) {
+	o.invertedY = v
 }
 
 func (o *mbtilesOutputter) Close() error {
@@ -157,14 +162,18 @@ func (o *mbtilesOutputter) Save(tile maptile.Tile, data []byte) error {
 	hash := md5.Sum(data)
 	tileID := hex.EncodeToString(hash[:])
 
-	invertedY := uint32(math.Pow(2.0, float64(tile.Z))) - 1 - tile.Y
+	tile_y := tile.Y
+
+	if !o.invertedY {
+		tile_y = uint32(math.Pow(2.0, float64(tile.Z))) - 1 - tile.Y
+	}
 
 	_, err := o.txn.Exec("INSERT OR REPLACE INTO images (tile_id, tile_data) VALUES (?, ?);", tileID, data)
 	if err != nil {
 		return err
 	}
 
-	_, err = o.txn.Exec("INSERT OR REPLACE INTO map (zoom_level, tile_column, tile_row, tile_id) VALUES (?, ?, ?, ?);", tile.Z, tile.X, invertedY, tileID)
+	_, err = o.txn.Exec("INSERT OR REPLACE INTO map (zoom_level, tile_column, tile_row, tile_id) VALUES (?, ?, ?, ?);", tile.Z, tile.X, tile_y, tileID)
 	if err != nil {
 		return err
 	}

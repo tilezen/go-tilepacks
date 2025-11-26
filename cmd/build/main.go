@@ -249,7 +249,7 @@ func main() {
 		}
 		metadata.Set("name", *mbtilesTilesetName)
 
-		outputter, outputterErr = tilepack.NewMbtilesOutputter(*outputDSN, *mbtilesBatchSize, metadata)
+		outputter, outputterErr = tilepack.NewMbtilesOutputter(*outputDSN, *mbtilesBatchSize, *invertedY, metadata)
 	default:
 		log.Fatalf("Unknown outputter: %s", *outputMode)
 	}

@@ -79,14 +79,19 @@ func GenerateTiles(opts *GenerateTilesOptions) {
 	}
 
 	rangeOpts.ConsumerFunc = func(minTile maptile.Tile, maxTile maptile.Tile, z maptile.Zoom) {
+
 		for x := minTile.X; x <= maxTile.X; x++ {
+
 			for y := minTile.Y; y <= maxTile.Y; y++ {
+
+				tile_y := y
+
 				if opts.InvertedY {
 					// https://gist.github.com/tmcw/4954720
-					y = uint32(math.Pow(2.0, float64(z))) - 1 - y
+					tile_y = uint32(math.Pow(2.0, float64(z))) - 1 - y
 				}
 
-				opts.ConsumerFunc(maptile.New(x, y, z))
+				opts.ConsumerFunc(maptile.New(x, tile_y, z))
 			}
 		}
 	}
