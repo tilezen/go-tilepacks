@@ -65,6 +65,11 @@ func (p *pmtilesOutputter) CreateTiles() error {
 func (p *pmtilesOutputter) Save(tile maptile.Tile, data []byte) error {
 	// Hilbert tile ID is the canonical ordering key used by the PMTiles spec.
 	id := pmtiles.ZxyToID(uint8(tile.Z), tile.X, tile.Y)
+	if p.tileset.Contains(id) {
+		// Duplicate tile IDs produce two directory entries for the same ID, making
+		// one unreachable via binary search. Reject early to keep the directory valid.
+		return fmt.Errorf("duplicate tile %v (Hilbert ID %d)", tile, id)
+	}
 	p.tileset.Add(id)
 
 	// Hash the raw (pre-compression) bytes for content-based deduplication.
@@ -118,13 +123,14 @@ func (p *pmtilesOutputter) Save(tile maptile.Tile, data []byte) error {
 	return nil
 }
 
-// AssignSpatialMetadata sets the geographic extent and zoom range in the header.
+// AssignSpatialMetadata sets the geographic extent in the header.
 // Coordinates are stored in the PMTiles binary format as integer values scaled
-// by 1e7 (i.e. degrees × 10 000 000). Center defaults to the midpoint of the
-// bounds at the minimum zoom if not overridden before Close.
+// by 1e7 (i.e. degrees × 10 000 000). MinZoom and MaxZoom are always inferred
+// from the tile data on Close (matching reference setZoomCenterDefaults behavior);
+// the minZoom/maxZoom parameters are accepted for interface compatibility but are
+// not stored — Close derives them from the actual tile entries.
+// Center defaults to the midpoint of the bounds at the inferred minimum zoom.
 func (p *pmtilesOutputter) AssignSpatialMetadata(bound orb.Bound, minZoom maptile.Zoom, maxZoom maptile.Zoom) error {
-	p.header.MinZoom = uint8(minZoom)
-	p.header.MaxZoom = uint8(maxZoom)
 	p.header.MinLonE7 = int32(bound.Min[0] * 1e7)
 	p.header.MinLatE7 = int32(bound.Min[1] * 1e7)
 	p.header.MaxLonE7 = int32(bound.Max[0] * 1e7)
@@ -187,6 +193,17 @@ func (p *pmtilesOutputter) Close() error {
 	// caller supplied bounds via AssignSpatialMetadata. We use the centerSet flag
 	// rather than testing for zero values, because a valid center can legitimately
 	// be (zoom=0, lon=0, lat=0) (e.g. a world tile at the equator/prime-meridian).
+	//
+	// Always derive MinZoom/MaxZoom from the actual tile data (first and last entry
+	// by Hilbert ID), mirroring the reference setZoomCenterDefaults behavior. This
+	// ensures readers see accurate zoom range even when AssignSpatialMetadata was
+	// not called.
+	if len(p.entries) > 0 {
+		minZ, _, _ := pmtiles.IDToZxy(p.entries[0].TileID)
+		maxZ, _, _ := pmtiles.IDToZxy(p.entries[len(p.entries)-1].TileID)
+		p.header.MinZoom = minZ
+		p.header.MaxZoom = maxZ
+	}
 	if p.centerSet {
 		p.header.CenterZoom = p.header.MinZoom
 		p.header.CenterLonE7 = (p.header.MinLonE7 + p.header.MaxLonE7) / 2
@@ -226,6 +243,11 @@ func (p *pmtilesOutputter) Close() error {
 		p.tileData.Close()
 		os.Remove(name)
 	}()
+
+	// Ensure the output file is always closed even on early error returns.
+	// The explicit Close at the end of the happy path captures any flush error;
+	// this defer is a safety net for the error paths.
+	defer p.outFile.Close()
 
 	if _, err = p.outFile.Write(pmtiles.SerializeHeader(p.header)); err != nil {
 		return fmt.Errorf("error writing pmtiles header: %w", err)
@@ -398,18 +420,26 @@ func NewPmtilesOutputter(dsn string, outputType string, metadata *MbtilesMetadat
 	}
 
 	compressBuf := &bytes.Buffer{}
+	compressor, err := gzip.NewWriterLevel(compressBuf, gzip.BestCompression)
+	if err != nil {
+		tmpFile.Close()
+		os.Remove(tmpFile.Name())
+		outFile.Close()
+		return nil, fmt.Errorf("error creating gzip compressor: %w", err)
+	}
+
 	outputter := &pmtilesOutputter{
-		outFile:         outFile,
-		tileset:         roaring64.New(),
-		hashFunc:        fnv.New128a(),
-		tileData:        tmpFile,
-		offsetMap:       make(map[string]offsetLen),
-		entries:         make([]pmtiles.EntryV3, 0),
-		header:          pmtiles.HeaderV3{},
-		compressBuffer:  compressBuf,
-		compressor:      gzip.NewWriter(compressBuf),
-		metadata:        metadata,
-		logger:          log.New(os.Stderr, "pmtiles: ", 0),
+		outFile:        outFile,
+		tileset:        roaring64.New(),
+		hashFunc:       fnv.New128a(),
+		tileData:       tmpFile,
+		offsetMap:      make(map[string]offsetLen),
+		entries:        make([]pmtiles.EntryV3, 0),
+		header:         pmtiles.HeaderV3{},
+		compressBuffer: compressBuf,
+		compressor:     compressor,
+		metadata:       metadata,
+		logger:         log.New(os.Stderr, "pmtiles: ", 0),
 	}
 
 	switch outputType {
@@ -419,6 +449,11 @@ func NewPmtilesOutputter(dsn string, outputType string, metadata *MbtilesMetadat
 	case "png":
 		outputter.header.TileType = pmtiles.Png
 		outputter.header.TileCompression = pmtiles.NoCompression
+	default:
+		tmpFile.Close()
+		os.Remove(tmpFile.Name())
+		outFile.Close()
+		return nil, fmt.Errorf("unsupported outputType %q: must be \"mvt\" or \"png\"", outputType)
 	}
 
 	return outputter, nil

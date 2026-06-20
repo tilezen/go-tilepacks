@@ -86,22 +86,23 @@ func TestPmtilesOutputter_CreateTiles_IsNoop(t *testing.T) {
 }
 
 func TestPmtilesOutputter_AssignSpatialMetadata(t *testing.T) {
-	// AssignSpatialMetadata must store min/max zoom and bounding box in the header
-	// in units of 1e-7 degrees (as required by the pmtiles spec).
+	// AssignSpatialMetadata must store the bounding box in the header in units of
+	// 1e-7 degrees (as required by the pmtiles spec). Zoom range is inferred from
+	// tile data on Close, not stored by AssignSpatialMetadata.
 	o, _ := newTestPmtilesOutputter(t, "mvt")
 	bounds := orb.Bound{Min: orb.Point{-180.0, -85.0}, Max: orb.Point{180.0, 85.0}}
 	if err := o.AssignSpatialMetadata(bounds, 0, 14); err != nil {
 		t.Fatalf("AssignSpatialMetadata: %v", err)
 	}
 
-	if o.header.MinZoom != 0 || o.header.MaxZoom != 14 {
-		t.Errorf("zoom range: got %d-%d, want 0-14", o.header.MinZoom, o.header.MaxZoom)
-	}
 	if o.header.MinLonE7 != int32(-180.0*1e7) {
 		t.Errorf("MinLonE7: got %d, want %d", o.header.MinLonE7, int32(-180.0*1e7))
 	}
 	if o.header.MaxLatE7 != int32(85.0*1e7) {
 		t.Errorf("MaxLatE7: got %d, want %d", o.header.MaxLatE7, int32(85.0*1e7))
+	}
+	if !o.centerSet {
+		t.Error("expected centerSet=true after AssignSpatialMetadata")
 	}
 }
 
@@ -349,6 +350,7 @@ func TestPmtilesOutputter_Close_CountsMatchSaved(t *testing.T) {
 func TestPmtilesOutputter_Close_DedupReducesContentsCount(t *testing.T) {
 	// When two tiles share the same content, TileContentsCount must be 1
 	// while TileEntriesCount remains 2 and AddressedTilesCount is 2.
+	// (The two tile IDs are non-contiguous so RLE does not merge them.)
 	o, path := newTestPmtilesOutputter(t, "mvt")
 	if err := o.CreateTiles(); err != nil {
 		t.Fatalf("CreateTiles: %v", err)
@@ -496,9 +498,10 @@ func TestRunLengthEncodeEntries_NonContiguousIDs(t *testing.T) {
 func TestPmtilesOutputter_Close_CenterDefaultsToMidpoint(t *testing.T) {
 	// When AssignSpatialMetadata is called but no explicit center is set,
 	// Close must derive the center as the midpoint of the bounds at min zoom.
+	// Min/MaxZoom are inferred from tile data (z=2 tile → MinZoom=MaxZoom=2).
 	o, path := newTestPmtilesOutputter(t, "mvt")
 	o.CreateTiles()
-	o.Save(maptile.New(0, 0, 0), []byte("d"))
+	o.Save(maptile.New(0, 0, 2), []byte("d"))
 	o.AssignSpatialMetadata(
 		orb.Bound{Min: orb.Point{-90, -45}, Max: orb.Point{90, 45}},
 		2, 10,
@@ -577,9 +580,8 @@ func TestNewPmtilesOutputter_CleansUpTempFileOnOutputError(t *testing.T) {
 
 func TestPmtilesOutputter_Close_NoSpatialMetadata(t *testing.T) {
 	// If AssignSpatialMetadata is never called, Close must still produce a valid
-	// archive. All spatial header fields remain zero, which is legal for an
-	// archive whose extent is unknown. The center fields must also be zero (not
-	// derived from a zero bound) because centerSet is false.
+	// archive. Spatial bounds remain zero. MinZoom/MaxZoom are inferred from the
+	// actual tile data. Center fields remain zero (centerSet is false).
 	o, path := newTestPmtilesOutputter(t, "mvt")
 	o.CreateTiles()
 	o.Save(maptile.New(0, 0, 0), []byte("d"))
@@ -591,6 +593,10 @@ func TestPmtilesOutputter_Close_NoSpatialMetadata(t *testing.T) {
 	if header.CenterZoom != 0 || header.CenterLonE7 != 0 || header.CenterLatE7 != 0 {
 		t.Errorf("expected zero center when AssignSpatialMetadata not called, got zoom=%d lon=%d lat=%d",
 			header.CenterZoom, header.CenterLonE7, header.CenterLatE7)
+	}
+	// MinZoom and MaxZoom must be inferred from the single z=0 tile.
+	if header.MinZoom != 0 || header.MaxZoom != 0 {
+		t.Errorf("expected MinZoom=0 MaxZoom=0 for z=0 tile, got min=%d max=%d", header.MinZoom, header.MaxZoom)
 	}
 }
 
@@ -652,8 +658,8 @@ func TestPmtilesOutputter_Close_RLEReadback(t *testing.T) {
 
 	_, _, readTile := readPmtilesFile(t, path)
 
-	// Read the last tile in the run (ID 4) — it falls inside the single RLE entry.
-	lastID := pmtiles.ZxyToID(1, 1, 1)
+	// Read the last tile in the run (ID 4, tile (1,0,1)) — it falls inside the single RLE entry.
+	lastID := pmtiles.ZxyToID(1, 1, 0)
 	got := readTile(lastID)
 	if got == nil {
 		t.Fatal("last tile in RLE run not found via readTile")
@@ -666,6 +672,53 @@ func TestPmtilesOutputter_Close_RLEReadback(t *testing.T) {
 	decompressed, _ := io.ReadAll(gr)
 	if !bytes.Equal(decompressed, shared) {
 		t.Errorf("RLE readback mismatch: got %q, want %q", decompressed, shared)
+	}
+}
+
+func TestNewPmtilesOutputter_UnknownOutputType(t *testing.T) {
+	// NewPmtilesOutputter must return an error for unrecognised output types rather
+	// than silently producing an archive with TileType=0 (UnknownTileType), which
+	// would be rejected or misidentified by pmtiles readers.
+	path := filepath.Join(t.TempDir(), "test.pmtiles")
+	_, err := NewPmtilesOutputter(path, "jpeg", NewMbtilesMetadata(map[string]string{}))
+	if err == nil {
+		t.Fatal("expected error for unknown outputType \"jpeg\", got nil")
+	}
+}
+
+func TestPmtilesOutputter_Save_DuplicateTileIDReturnsError(t *testing.T) {
+	// Saving the same tile coordinate twice must return an error. Duplicate tile IDs
+	// produce two directory entries for the same ID; binary-search lookup in
+	// findTile returns the first entry, making the second permanently unreachable.
+	o, _ := newTestPmtilesOutputter(t, "mvt")
+	tile := maptile.New(0, 0, 0)
+	if err := o.Save(tile, []byte("first")); err != nil {
+		t.Fatalf("first Save: %v", err)
+	}
+	if err := o.Save(tile, []byte("second")); err == nil {
+		t.Fatal("expected error on duplicate tile save, got nil")
+	}
+}
+
+func TestPmtilesOutputter_Close_ZoomRangeInferredFromTiles(t *testing.T) {
+	// When AssignSpatialMetadata is not called, Close must still derive
+	// MinZoom and MaxZoom from the Hilbert IDs of the first and last entries,
+	// matching the reference setZoomCenterDefaults behavior.
+	o, path := newTestPmtilesOutputter(t, "mvt")
+	o.CreateTiles()
+	// Save tiles at z=5 only.
+	o.Save(maptile.New(0, 0, 5), []byte("a"))
+	o.Save(maptile.New(1, 0, 5), []byte("b"))
+	if err := o.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	header, _, _ := readPmtilesFile(t, path)
+	if header.MinZoom != 5 {
+		t.Errorf("MinZoom: got %d, want 5", header.MinZoom)
+	}
+	if header.MaxZoom != 5 {
+		t.Errorf("MaxZoom: got %d, want 5", header.MaxZoom)
 	}
 }
 
