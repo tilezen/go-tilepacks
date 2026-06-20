@@ -39,9 +39,11 @@ func readPmtilesFile(t *testing.T, path string) (pmtiles.HeaderV3, []pmtiles.Ent
 	entries := pmtiles.DeserializeEntries(bytes.NewBuffer(rootBuf), pmtiles.Gzip)
 
 	readTile := func(id uint64) []byte {
-		// Walk entries to find the one matching id.
+		// Walk entries. A tile-data entry covers RunLength consecutive tile IDs
+		// starting at TileID, so a hit occurs when id falls in that range.
+		// (RunLength=0 entries are leaf-directory pointers, not tile data.)
 		for _, e := range entries {
-			if e.TileID == id && e.RunLength > 0 {
+			if e.RunLength > 0 && id >= e.TileID && id < e.TileID+uint64(e.RunLength) {
 				buf := make([]byte, e.Length)
 				offset := int64(header.TileDataOffset + e.Offset)
 				if _, err := f.ReadAt(buf, offset); err != nil {
@@ -570,6 +572,100 @@ func TestNewPmtilesOutputter_CleansUpTempFileOnOutputError(t *testing.T) {
 	_, err := NewPmtilesOutputter("/dev/null/cannot-create.pmtiles", "mvt", NewMbtilesMetadata(map[string]string{}))
 	if err == nil {
 		t.Fatal("expected error for unwritable path")
+	}
+}
+
+func TestPmtilesOutputter_Close_NoSpatialMetadata(t *testing.T) {
+	// If AssignSpatialMetadata is never called, Close must still produce a valid
+	// archive. All spatial header fields remain zero, which is legal for an
+	// archive whose extent is unknown. The center fields must also be zero (not
+	// derived from a zero bound) because centerSet is false.
+	o, path := newTestPmtilesOutputter(t, "mvt")
+	o.CreateTiles()
+	o.Save(maptile.New(0, 0, 0), []byte("d"))
+	if err := o.Close(); err != nil {
+		t.Fatalf("Close without spatial metadata: %v", err)
+	}
+
+	header, _, _ := readPmtilesFile(t, path)
+	if header.CenterZoom != 0 || header.CenterLonE7 != 0 || header.CenterLatE7 != 0 {
+		t.Errorf("expected zero center when AssignSpatialMetadata not called, got zoom=%d lon=%d lat=%d",
+			header.CenterZoom, header.CenterLonE7, header.CenterLatE7)
+	}
+}
+
+func TestPmtilesOutputter_PNG_EndToEnd(t *testing.T) {
+	// For PNG output (TileCompression=NoCompression) tile bytes must be stored
+	// verbatim — no gzip wrapping — and must round-trip identically.
+	o, path := newTestPmtilesOutputter(t, "png")
+	o.CreateTiles()
+
+	want := []byte("\x89PNG\r\n\x1a\n") // PNG magic bytes
+	tile := maptile.New(0, 0, 0)
+	if err := o.Save(tile, want); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := o.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	header, _, readTile := readPmtilesFile(t, path)
+	if header.TileType != pmtiles.Png {
+		t.Errorf("TileType: got %v, want Png", header.TileType)
+	}
+	if header.TileCompression != pmtiles.NoCompression {
+		t.Errorf("TileCompression: got %v, want NoCompression", header.TileCompression)
+	}
+
+	tileID := pmtiles.ZxyToID(0, 0, 0)
+	got := readTile(tileID)
+	if got == nil {
+		t.Fatal("tile not found in archive")
+	}
+	// Bytes must be identical to what was passed to Save — no compression applied.
+	if !bytes.Equal(got, want) {
+		t.Errorf("PNG tile data mismatch: got %x, want %x", got, want)
+	}
+}
+
+func TestPmtilesOutputter_Close_RLEReadback(t *testing.T) {
+	// After RLE, reading any tile in a run must return the correct bytes.
+	// Saves all four z=1 tiles with identical data, then verifies the last
+	// tile in the run (Hilbert ID 4) is readable via the single RLE entry.
+	o, path := newTestPmtilesOutputter(t, "mvt")
+	o.CreateTiles()
+
+	shared := []byte("ocean")
+	for _, tile := range []maptile.Tile{
+		maptile.New(0, 0, 1), // Hilbert ID 1
+		maptile.New(0, 1, 1), // Hilbert ID 2
+		maptile.New(1, 1, 1), // Hilbert ID 3
+		maptile.New(1, 0, 1), // Hilbert ID 4
+	} {
+		if err := o.Save(tile, shared); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+	}
+	if err := o.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	_, _, readTile := readPmtilesFile(t, path)
+
+	// Read the last tile in the run (ID 4) — it falls inside the single RLE entry.
+	lastID := pmtiles.ZxyToID(1, 1, 1)
+	got := readTile(lastID)
+	if got == nil {
+		t.Fatal("last tile in RLE run not found via readTile")
+	}
+	// The stored bytes are gzip-compressed; decompress to verify.
+	gr, err := gzip.NewReader(bytes.NewReader(got))
+	if err != nil {
+		t.Fatalf("decompress: %v", err)
+	}
+	decompressed, _ := io.ReadAll(gr)
+	if !bytes.Equal(decompressed, shared) {
+		t.Errorf("RLE readback mismatch: got %q, want %q", decompressed, shared)
 	}
 }
 

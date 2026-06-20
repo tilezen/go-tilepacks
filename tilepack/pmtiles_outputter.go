@@ -46,6 +46,7 @@ type pmtilesOutputter struct {
 	compressor     *gzip.Writer
 	header         pmtiles.HeaderV3
 	metadata       *MbtilesMetadata // written into the JSON metadata section on Close
+	centerSet      bool             // true once AssignSpatialMetadata has been called
 	outFile        *os.File
 	logger         *log.Logger
 }
@@ -85,8 +86,12 @@ func (p *pmtilesOutputter) Save(tile maptile.Tile, data []byte) error {
 		} else {
 			p.compressBuffer.Reset()
 			p.compressor.Reset(p.compressBuffer)
-			p.compressor.Write(data)
-			p.compressor.Close()
+			if _, err := p.compressor.Write(data); err != nil {
+				return fmt.Errorf("gzip write: %w", err)
+			}
+			if err := p.compressor.Close(); err != nil {
+				return fmt.Errorf("gzip close: %w", err)
+			}
 			newData = p.compressBuffer.Bytes()
 		}
 
@@ -124,6 +129,7 @@ func (p *pmtilesOutputter) AssignSpatialMetadata(bound orb.Bound, minZoom maptil
 	p.header.MinLatE7 = int32(bound.Min[1] * 1e7)
 	p.header.MaxLonE7 = int32(bound.Max[0] * 1e7)
 	p.header.MaxLatE7 = int32(bound.Max[1] * 1e7)
+	p.centerSet = true
 	return nil
 }
 
@@ -178,9 +184,10 @@ func (p *pmtilesOutputter) Close() error {
 	}
 
 	// Step 4: derive center from the midpoint of the spatial bounds when the
-	// caller supplied bounds via AssignSpatialMetadata but did not set a center
-	// explicitly (all three center fields are zero).
-	if p.header.CenterZoom == 0 && p.header.CenterLonE7 == 0 && p.header.CenterLatE7 == 0 {
+	// caller supplied bounds via AssignSpatialMetadata. We use the centerSet flag
+	// rather than testing for zero values, because a valid center can legitimately
+	// be (zoom=0, lon=0, lat=0) (e.g. a world tile at the equator/prime-meridian).
+	if p.centerSet {
 		p.header.CenterZoom = p.header.MinZoom
 		p.header.CenterLonE7 = (p.header.MinLonE7 + p.header.MaxLonE7) / 2
 		p.header.CenterLatE7 = (p.header.MinLatE7 + p.header.MaxLatE7) / 2
@@ -212,7 +219,6 @@ func (p *pmtilesOutputter) Close() error {
 	p.header.TileDataOffset = p.header.LeafDirectoryOffset + p.header.LeafDirectoryLength
 	p.header.TileDataLength = p.dataOffset
 
-	defer p.outFile.Close()
 	// Remove the temp file once we have finished copying its contents; it is
 	// not needed after Close returns.
 	defer func() {
@@ -240,6 +246,11 @@ func (p *pmtilesOutputter) Close() error {
 		return fmt.Errorf("error copying tile data to output file: %w", err)
 	}
 
+	// Flush and close the output file explicitly so we can return any error.
+	// The deferred Close is still registered but will be a no-op on a closed file.
+	if err = p.outFile.Close(); err != nil {
+		return fmt.Errorf("error closing output file: %w", err)
+	}
 	return nil
 }
 
@@ -310,11 +321,13 @@ func runLengthEncodeEntries(entries []pmtiles.EntryV3) []pmtiles.EntryV3 {
 //
 // (Case 2 — mixed tile entries and leaf pointers — is not yet implemented.)
 func optimizeDirectories(entries []pmtiles.EntryV3, targetRootLen int, compression pmtiles.Compression) ([]byte, []byte, int) {
-	if len(entries) < 16384 {
-		testRootBytes := pmtiles.SerializeEntries(entries, compression)
-		if len(testRootBytes) <= targetRootLen {
-			return testRootBytes, make([]byte, 0), 0
-		}
+	// Case 1: attempt to fit everything into the root. Try regardless of entry
+	// count — after RLE a large addressed-tile set may compress to well under the
+	// target length. Only fall through to leaf layout if the serialized bytes
+	// actually exceed the budget.
+	testRootBytes := pmtiles.SerializeEntries(entries, compression)
+	if len(testRootBytes) <= targetRootLen {
+		return testRootBytes, make([]byte, 0), 0
 	}
 
 	// Case 3: root contains only leaf-directory pointers.
