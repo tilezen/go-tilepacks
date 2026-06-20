@@ -20,6 +20,12 @@ import (
 	"github.com/paulmach/orb/maptile"
 )
 
+// s3Downloader is the subset of s3manager.Downloader used by job generators,
+// allowing tests to inject a fake without hitting real S3.
+type s3Downloader interface {
+	Download(w io.WriterAt, input *s3.GetObjectInput, options ...func(*s3manager.Downloader)) (int64, error)
+}
+
 const (
 	tileScale = 2
 )
@@ -59,7 +65,7 @@ func NewMetatileJobGenerator(bucket string, requesterPays bool, pathTemplate str
 }
 
 type metatileJobGenerator struct {
-	s3Client      *s3manager.Downloader
+	s3Client      s3Downloader
 	bucket        string
 	requesterPays bool
 	pathTemplate  string

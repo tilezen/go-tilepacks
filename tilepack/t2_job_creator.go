@@ -41,7 +41,7 @@ func NewTapalcatl2JobGenerator(bucket string, requesterPays bool, pathTemplate s
 }
 
 type tapalcatl2JobGenerator struct {
-	s3Client          *s3manager.Downloader
+	s3Client          s3Downloader
 	bucket            string
 	requesterPays     bool
 	pathTemplate      string
