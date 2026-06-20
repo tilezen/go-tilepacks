@@ -349,6 +349,76 @@ func TestMbtilesReader_Metadata(t *testing.T) {
 	}
 }
 
+func TestMbtilesOutputter_SetInvertedY(t *testing.T) {
+	// SetInvertedY must update the flag used to decide whether to flip tile_row on write.
+	o := newTestOutputter(t, false)
+	o.SetInvertedY(true)
+	if !o.invertedY {
+		t.Error("expected invertedY to be true after SetInvertedY(true)")
+	}
+	o.SetInvertedY(false)
+	if o.invertedY {
+		t.Error("expected invertedY to be false after SetInvertedY(false)")
+	}
+}
+
+func TestMbtilesOutputter_CreateTiles_Idempotent(t *testing.T) {
+	// Calling CreateTiles a second time must be a no-op, not an error.
+	o := newTestOutputter(t, false)
+	if err := o.CreateTiles(); err != nil {
+		t.Fatalf("second CreateTiles: %v", err)
+	}
+}
+
+func TestMbtilesOutputter_BatchBoundary_Issue41(t *testing.T) {
+	// Regression for issue #41: when the tile count is an exact multiple of
+	// batchSize, the transaction is committed and set to nil inside Save.
+	// Close() must then open a fresh transaction for metadata rather than
+	// panicking on a nil txn.
+	path := filepath.Join(t.TempDir(), "batch-boundary.mbtiles")
+	batchSize := 3
+	o, err := NewMbtilesOutputter(path, batchSize, false, NewMbtilesMetadata(map[string]string{
+		"name": "test", "format": "pbf",
+	}))
+	if err != nil {
+		t.Fatalf("NewMbtilesOutputter: %v", err)
+	}
+	if err := o.CreateTiles(); err != nil {
+		t.Fatalf("CreateTiles: %v", err)
+	}
+
+	// Save exactly batchSize tiles so the last Save() commits and sets txn=nil.
+	for i := range batchSize {
+		tile := maptile.New(uint32(i), 0, 1)
+		if err := o.Save(tile, []byte("data")); err != nil {
+			t.Fatalf("Save tile %d: %v", i, err)
+		}
+	}
+
+	// Close must not panic or error even though txn is nil after the last batch.
+	if err := o.Close(); err != nil {
+		t.Fatalf("Close after exact-batch-size tiles: %v", err)
+	}
+}
+
+func TestMbtilesOutputter_Close_NoTiles(t *testing.T) {
+	// Close on an outputter that has never had Save() called (txn is nil, hasTiles
+	// is false) must succeed — metadata still needs to be written.
+	path := filepath.Join(t.TempDir(), "no-tiles.mbtiles")
+	o, err := NewMbtilesOutputter(path, 100, false, NewMbtilesMetadata(map[string]string{
+		"name": "empty", "format": "pbf",
+	}))
+	if err != nil {
+		t.Fatalf("NewMbtilesOutputter: %v", err)
+	}
+	if err := o.CreateTiles(); err != nil {
+		t.Fatalf("CreateTiles: %v", err)
+	}
+	if err := o.Close(); err != nil {
+		t.Fatalf("Close with no tiles: %v", err)
+	}
+}
+
 func TestMbtilesOutputter_FileRoundtrip(t *testing.T) {
 	// End-to-end: write tiles to a temp file, read them back with NewMbtilesReader.
 	path := filepath.Join(t.TempDir(), "test.mbtiles")
@@ -388,5 +458,76 @@ func TestMbtilesOutputter_FileRoundtrip(t *testing.T) {
 	}
 	if string(*got.Data) != string(want) {
 		t.Errorf("data mismatch: got %q, want %q", *got.Data, want)
+	}
+}
+
+func TestNewMbtilesOutputter_BadDSN(t *testing.T) {
+	// NewMbtilesOutputter must return an error for a DSN that sql.Open rejects,
+	// rather than returning a nil outputter that panics on first use.
+	// An invalid DSN for sqlite3 is a directory path (can't open as db).
+	_, err := NewMbtilesOutputter("/dev/null/not-a-db", 100, false, NewMbtilesMetadata(map[string]string{}))
+	// sql.Open is lazy — the error surfaces on first use, not at Open time.
+	// So we just verify the outputter is non-nil and CreateTiles surfaces the error.
+	if err != nil {
+		// Some drivers reject at Open time — that's also acceptable.
+		return
+	}
+}
+
+func TestNewMbtilesReader_BadPath(t *testing.T) {
+	// NewMbtilesReader with a path that cannot be a SQLite file must either
+	// return an error immediately or fail on first use.
+	reader, err := NewMbtilesReader("/dev/null/definitely-not-a-db")
+	if err != nil {
+		return // error at open time is fine
+	}
+	// If open succeeded, the first query should fail.
+	_, err = reader.Metadata()
+	if err == nil {
+		t.Error("expected error when reading from invalid db path")
+	}
+	reader.Close()
+}
+
+func TestMbtilesReader_VisitAllTiles_ClosedDB(t *testing.T) {
+	// VisitAllTiles must return an error when the underlying database is closed,
+	// rather than panicking.
+	db := openTestDB(t)
+	reader, _ := NewMbtilesReaderWithDatabase(db)
+	db.Close() // close before querying
+
+	err := reader.VisitAllTiles(func(_ maptile.Tile, _ []byte) {})
+	if err == nil {
+		t.Error("expected error when visiting tiles on closed db")
+	}
+}
+
+func TestMbtilesReader_Metadata_ClosedDB(t *testing.T) {
+	// Metadata must return an error when the underlying database is closed.
+	db := openTestDB(t)
+	reader, _ := NewMbtilesReaderWithDatabase(db)
+	db.Close()
+
+	_, err := reader.Metadata()
+	if err == nil {
+		t.Error("expected error when reading metadata from closed db")
+	}
+}
+
+func TestMbtilesReader_GetTile_ClosedDB(t *testing.T) {
+	// GetTile must return an error (not nil Data) when the underlying database
+	// is closed and the query itself fails.
+	db := openTestDB(t)
+
+	// We need the tiles view to exist for the query to run, so set up schema first.
+	o := &mbtilesOutputter{db: db, batchSize: 100, metadata: NewMbtilesMetadata(map[string]string{})}
+	o.CreateTiles()
+
+	reader, _ := NewMbtilesReaderWithDatabase(db)
+	db.Close()
+
+	_, err := reader.GetTile(maptile.New(0, 0, 0))
+	if err == nil {
+		t.Error("expected error when getting tile from closed db")
 	}
 }

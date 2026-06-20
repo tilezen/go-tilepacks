@@ -183,6 +183,67 @@ func TestMbtilesMetadata_Name(t *testing.T) {
 	}
 }
 
+func TestMbtilesMetadata_Keys(t *testing.T) {
+	// Keys must return exactly the set of keys present in the metadata map.
+	m := NewMbtilesMetadata(map[string]string{"name": "x", "format": "pbf", "minzoom": "0"})
+	keys := m.Keys()
+	if len(keys) != 3 {
+		t.Errorf("expected 3 keys, got %d: %v", len(keys), keys)
+	}
+}
+
+func TestMbtilesMetadata_Bounds_NonNumeric_Miny(t *testing.T) {
+	// Each of the four bounds fields must individually fail on non-numeric input.
+	m := NewMbtilesMetadata(map[string]string{"bounds": "-122.4,bad,-122.3,37.8"})
+	_, err := m.Bounds()
+	if err == nil {
+		t.Fatal("expected error for non-numeric miny")
+	}
+}
+
+func TestMbtilesMetadata_Bounds_NonNumeric_Maxx(t *testing.T) {
+	m := NewMbtilesMetadata(map[string]string{"bounds": "-122.4,37.7,bad,37.8"})
+	_, err := m.Bounds()
+	if err == nil {
+		t.Fatal("expected error for non-numeric maxx")
+	}
+}
+
+func TestMbtilesMetadata_Bounds_NonNumeric_Maxy(t *testing.T) {
+	m := NewMbtilesMetadata(map[string]string{"bounds": "-122.4,37.7,-122.3,bad"})
+	_, err := m.Bounds()
+	if err == nil {
+		t.Fatal("expected error for non-numeric maxy")
+	}
+}
+
+func TestMbtilesMetadata_Center_NonNumeric_X(t *testing.T) {
+	// A non-numeric longitude in the center string must return a parse error.
+	m := NewMbtilesMetadata(map[string]string{"center": "bad,38.9,5"})
+	_, _, err := m.Center()
+	if err == nil {
+		t.Fatal("expected error for non-numeric center x")
+	}
+}
+
+func TestMbtilesMetadata_Center_NonNumeric_Y(t *testing.T) {
+	// A non-numeric latitude in the center string must return a parse error.
+	m := NewMbtilesMetadata(map[string]string{"center": "-77.0,bad,5"})
+	_, _, err := m.Center()
+	if err == nil {
+		t.Fatal("expected error for non-numeric center y")
+	}
+}
+
+func TestMbtilesMetadata_Center_NonNumeric_Zoom(t *testing.T) {
+	// A non-numeric zoom in the center string must return a parse error.
+	m := NewMbtilesMetadata(map[string]string{"center": "-77.0,38.9,five"})
+	_, _, err := m.Center()
+	if err == nil {
+		t.Fatal("expected error for non-numeric center zoom")
+	}
+}
+
 func TestMbtilesMetadata_Set(t *testing.T) {
 	// Set must overwrite an existing key and create a new one.
 	m := NewMbtilesMetadata(map[string]string{"name": "old"})

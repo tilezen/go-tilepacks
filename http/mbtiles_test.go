@@ -1,6 +1,7 @@
 package http
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -29,6 +30,54 @@ func (s *stubReader) VisitAllTiles(visitor func(maptile.Tile, []byte)) error { r
 
 func (s *stubReader) Metadata() (*tilepack.MbtilesMetadata, error) {
 	return tilepack.NewMbtilesMetadata(map[string]string{}), nil
+}
+
+// errorReader is a stubReader variant whose GetTile always returns an error,
+// used to test the handler's error branch.
+type errorReader struct{}
+
+func (e *errorReader) Close() error { return nil }
+func (e *errorReader) GetTile(_ maptile.Tile) (*tilepack.TileData, error) {
+	return nil, fmt.Errorf("simulated read error")
+}
+func (e *errorReader) VisitAllTiles(_ func(maptile.Tile, []byte)) error { return nil }
+func (e *errorReader) Metadata() (*tilepack.MbtilesMetadata, error) {
+	return tilepack.NewMbtilesMetadata(map[string]string{}), nil
+}
+
+// TestMbtilesHandler_NoGzipAccept verifies that when a client does not send
+// Accept-Encoding: gzip, the tile is still served (without the Content-Encoding
+// header) and the log.Printf warning branch in the handler is exercised.
+func TestMbtilesHandler_NoGzipAccept(t *testing.T) {
+	tile := maptile.New(0, 0, 0)
+	reader := &stubReader{data: map[maptile.Tile][]byte{tile: []byte("data")}}
+	handler := MbtilesHandler(reader)
+
+	req := httptest.NewRequest(http.MethodGet, "/tilezen/vector/v1/512/all/0/0/0.mvt", nil)
+	// No Accept-Encoding header set — triggers the warning log path.
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rr.Code)
+	}
+	if ce := rr.Header().Get("Content-Encoding"); ce != "" {
+		t.Errorf("expected no Content-Encoding header, got %q", ce)
+	}
+}
+
+// TestMbtilesHandler_GetTileError verifies that the handler returns 404 when
+// the backing reader returns an error (e.g. database corruption or I/O failure).
+func TestMbtilesHandler_GetTileError(t *testing.T) {
+	handler := MbtilesHandler(&errorReader{})
+
+	req := httptest.NewRequest(http.MethodGet, "/tilezen/vector/v1/512/all/0/0/0.mvt", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("expected 404 on reader error, got %d", rr.Code)
+	}
 }
 
 // TestParseTileFromPath verifies that the Tilezen URL pattern is parsed into
