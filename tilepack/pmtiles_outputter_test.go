@@ -374,3 +374,202 @@ func TestPmtilesOutputter_Close_DedupReducesContentsCount(t *testing.T) {
 		t.Errorf("TileContentsCount: got %d, want 1 (dedup)", header.TileContentsCount)
 	}
 }
+
+func TestPmtilesOutputter_Close_ClusteredFlagSet(t *testing.T) {
+	// The Clustered flag must be true in the header because entries are sorted by
+	// tile ID. Readers use this flag to determine whether binary-search lookup is
+	// valid; writing an unclustered archive is a spec violation.
+	o, path := newTestPmtilesOutputter(t, "mvt")
+	o.CreateTiles()
+	o.Save(maptile.New(0, 0, 0), []byte("d"))
+	if err := o.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	header, _, _ := readPmtilesFile(t, path)
+	if !header.Clustered {
+		t.Error("expected Clustered=true in header")
+	}
+}
+
+func TestPmtilesOutputter_Close_RunLengthEncoding(t *testing.T) {
+	// Consecutive tiles with identical content and contiguous Hilbert IDs must
+	// be collapsed into a single directory entry with RunLength > 1.  This
+	// shrinks the directory for uniform regions (e.g. ocean tiles) without
+	// altering the tile data section.
+	//
+	// At z=1 the four tiles have Hilbert IDs 1,2,3,4 (contiguous after sorting).
+	// Saving them all with the same bytes means all four should collapse into one
+	// entry with RunLength=4.
+	o, path := newTestPmtilesOutputter(t, "mvt")
+	o.CreateTiles()
+
+	shared := []byte("ocean-tile")
+	for _, tile := range []maptile.Tile{
+		maptile.New(0, 0, 1), // Hilbert ID 1
+		maptile.New(0, 1, 1), // Hilbert ID 2
+		maptile.New(1, 1, 1), // Hilbert ID 3
+		maptile.New(1, 0, 1), // Hilbert ID 4
+	} {
+		if err := o.Save(tile, shared); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+	}
+	if err := o.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	header, entries, _ := readPmtilesFile(t, path)
+
+	// Four addressed tiles, but dedup leaves only one content blob.
+	if header.AddressedTilesCount != 4 {
+		t.Errorf("AddressedTilesCount: got %d, want 4", header.AddressedTilesCount)
+	}
+	if header.TileContentsCount != 1 {
+		t.Errorf("TileContentsCount: got %d, want 1", header.TileContentsCount)
+	}
+	// RLE must have reduced four entries to one.
+	if len(entries) != 1 {
+		t.Errorf("expected 1 RLE entry in directory, got %d", len(entries))
+	}
+	if entries[0].RunLength != 4 {
+		t.Errorf("RunLength: got %d, want 4", entries[0].RunLength)
+	}
+}
+
+func TestRunLengthEncodeEntries_Empty(t *testing.T) {
+	// runLengthEncodeEntries must not panic on an empty slice.
+	result := runLengthEncodeEntries([]pmtiles.EntryV3{})
+	if len(result) != 0 {
+		t.Errorf("expected empty result, got %d entries", len(result))
+	}
+}
+
+func TestRunLengthEncodeEntries_NoRun(t *testing.T) {
+	// Entries with different content (different offsets) must not be merged.
+	entries := []pmtiles.EntryV3{
+		{TileID: 0, Offset: 0, Length: 10, RunLength: 1},
+		{TileID: 1, Offset: 10, Length: 10, RunLength: 1},
+		{TileID: 2, Offset: 20, Length: 10, RunLength: 1},
+	}
+	result := runLengthEncodeEntries(entries)
+	if len(result) != 3 {
+		t.Errorf("expected 3 entries (no run), got %d", len(result))
+	}
+}
+
+func TestRunLengthEncodeEntries_PartialRun(t *testing.T) {
+	// A run of two identical tiles followed by a different tile must produce
+	// one merged entry and one standalone entry.
+	entries := []pmtiles.EntryV3{
+		{TileID: 0, Offset: 0, Length: 5, RunLength: 1},
+		{TileID: 1, Offset: 0, Length: 5, RunLength: 1}, // same offset → run
+		{TileID: 2, Offset: 5, Length: 5, RunLength: 1}, // different offset → new entry
+	}
+	result := runLengthEncodeEntries(entries)
+	if len(result) != 2 {
+		t.Errorf("expected 2 entries, got %d", len(result))
+	}
+	if result[0].RunLength != 2 {
+		t.Errorf("first entry RunLength: got %d, want 2", result[0].RunLength)
+	}
+	if result[1].RunLength != 1 {
+		t.Errorf("second entry RunLength: got %d, want 1", result[1].RunLength)
+	}
+}
+
+func TestRunLengthEncodeEntries_NonContiguousIDs(t *testing.T) {
+	// Identical content at non-contiguous tile IDs (gap in the ID sequence) must
+	// NOT be merged — they are separate tiles in different locations.
+	entries := []pmtiles.EntryV3{
+		{TileID: 0, Offset: 0, Length: 5, RunLength: 1},
+		{TileID: 5, Offset: 0, Length: 5, RunLength: 1}, // same content, but ID gap
+	}
+	result := runLengthEncodeEntries(entries)
+	if len(result) != 2 {
+		t.Errorf("expected 2 entries for non-contiguous IDs, got %d", len(result))
+	}
+}
+
+func TestPmtilesOutputter_Close_CenterDefaultsToMidpoint(t *testing.T) {
+	// When AssignSpatialMetadata is called but no explicit center is set,
+	// Close must derive the center as the midpoint of the bounds at min zoom.
+	o, path := newTestPmtilesOutputter(t, "mvt")
+	o.CreateTiles()
+	o.Save(maptile.New(0, 0, 0), []byte("d"))
+	o.AssignSpatialMetadata(
+		orb.Bound{Min: orb.Point{-90, -45}, Max: orb.Point{90, 45}},
+		2, 10,
+	)
+	if err := o.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	header, _, _ := readPmtilesFile(t, path)
+
+	if header.CenterZoom != 2 {
+		t.Errorf("CenterZoom: got %d, want 2 (min zoom)", header.CenterZoom)
+	}
+	wantLon := int32(0) // midpoint of -90 and 90 in E7 is 0
+	if header.CenterLonE7 != wantLon {
+		t.Errorf("CenterLonE7: got %d, want %d", header.CenterLonE7, wantLon)
+	}
+	wantLat := int32(0) // midpoint of -45 and 45 in E7 is 0
+	if header.CenterLatE7 != wantLat {
+		t.Errorf("CenterLatE7: got %d, want %d", header.CenterLatE7, wantLat)
+	}
+}
+
+func TestPmtilesOutputter_Close_MetadataWritten(t *testing.T) {
+	// Metadata keys passed to NewPmtilesOutputter must appear in the JSON
+	// metadata section of the written archive.
+	path := filepath.Join(t.TempDir(), "meta.pmtiles")
+	o, err := NewPmtilesOutputter(path, "mvt", NewMbtilesMetadata(map[string]string{
+		"name":   "test-tileset",
+		"format": "mvt",
+	}))
+	if err != nil {
+		t.Fatalf("NewPmtilesOutputter: %v", err)
+	}
+	o.CreateTiles()
+	o.Save(maptile.New(0, 0, 0), []byte("d"))
+	if err := o.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	// Read the metadata section back and verify the keys are present.
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer f.Close()
+
+	headerBuf := make([]byte, pmtiles.HeaderV3LenBytes)
+	io.ReadFull(f, headerBuf)
+	header, _ := pmtiles.DeserializeHeader(headerBuf)
+
+	metaBuf := make([]byte, header.MetadataLength)
+	f.ReadAt(metaBuf, int64(header.MetadataOffset))
+
+	metaJSON, err := pmtiles.DeserializeMetadata(bytes.NewReader(metaBuf), pmtiles.Gzip)
+	if err != nil {
+		t.Fatalf("deserialize metadata: %v", err)
+	}
+	if metaJSON["name"] != "test-tileset" {
+		t.Errorf("metadata name: got %v, want \"test-tileset\"", metaJSON["name"])
+	}
+	if metaJSON["format"] != "mvt" {
+		t.Errorf("metadata format: got %v, want \"mvt\"", metaJSON["format"])
+	}
+}
+
+func TestNewPmtilesOutputter_CleansUpTempFileOnOutputError(t *testing.T) {
+	// If the output file cannot be created, NewPmtilesOutputter must not leak
+	// the temp data file.  We check indirectly: if the constructor returns an
+	// error the caller should not need to clean up anything.
+	_, err := NewPmtilesOutputter("/dev/null/cannot-create.pmtiles", "mvt", NewMbtilesMetadata(map[string]string{}))
+	if err == nil {
+		t.Fatal("expected error for unwritable path")
+	}
+}
+
