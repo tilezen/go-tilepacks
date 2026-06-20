@@ -38,7 +38,7 @@ type offsetLen struct {
 type pmtilesOutputter struct {
 	tileset        *roaring64.Bitmap    // set of all addressed tile IDs (for count reporting)
 	hashFunc       hash.Hash            // FNV-128a; reset per tile for deduplication
-	offsetMap      map[string]offsetLen // hash → position in tileData; drives dedup
+	offsetMap      map[[16]byte]offsetLen // hash → position in tileData; drives dedup
 	dataOffset     uint64               // running byte offset into tileData
 	tileData       *os.File             // temp file accumulating raw tile blobs
 	entries        []pmtiles.EntryV3    // one entry per Save call before RLE
@@ -73,11 +73,13 @@ func (p *pmtilesOutputter) Save(tile maptile.Tile, data []byte) error {
 	p.tileset.Add(id)
 
 	// Hash the raw (pre-compression) bytes for content-based deduplication.
+	// Write the FNV-128a sum into a stack-allocated [16]byte so the map key
+	// never escapes to the heap (one fewer allocation per tile vs. string(h.Sum(nil))).
 	p.hashFunc.Reset()
 	p.hashFunc.Write(data)
-	var empty []byte
-	sumString := string(p.hashFunc.Sum(empty))
-	found, ok := p.offsetMap[sumString]
+	var key [16]byte
+	p.hashFunc.Sum(key[:0])
+	found, ok := p.offsetMap[key]
 
 	if !ok {
 		// New content: compress if needed, append to the temp data file.
@@ -109,7 +111,7 @@ func (p *pmtilesOutputter) Save(tile maptile.Tile, data []byte) error {
 			offset: p.dataOffset,
 			length: uint32(bytesWritten),
 		}
-		p.offsetMap[sumString] = found
+		p.offsetMap[key] = found
 		p.dataOffset += uint64(bytesWritten)
 	}
 
@@ -371,9 +373,10 @@ func optimizeDirectories(entries []pmtiles.EntryV3, targetRootLen int, compressi
 // Each root entry has RunLength=0, which signals to readers that the entry is a
 // leaf-directory pointer rather than a tile-data pointer.
 func buildRootsLeaves(entries []pmtiles.EntryV3, leafSize int, compression pmtiles.Compression) ([]byte, []byte, int) {
-	rootEntries := make([]pmtiles.EntryV3, 0)
+	numLeaves := (len(entries) + leafSize - 1) / leafSize
+	rootEntries := make([]pmtiles.EntryV3, 0, numLeaves)
 	leavesBytes := make([]byte, 0)
-	numLeaves := 0
+	numLeaves = 0
 
 	for i := 0; i < len(entries); i += leafSize {
 		numLeaves++
@@ -431,7 +434,7 @@ func NewPmtilesOutputter(dsn string, outputType string, metadata *MbtilesMetadat
 		tileset:        roaring64.New(),
 		hashFunc:       fnv.New128a(),
 		tileData:       tmpFile,
-		offsetMap:      make(map[string]offsetLen),
+		offsetMap:      make(map[[16]byte]offsetLen),
 		entries:        make([]pmtiles.EntryV3, 0),
 		header:         pmtiles.HeaderV3{},
 		compressBuffer: compressBuf,

@@ -60,6 +60,7 @@ func NewMetatileJobGenerator(bucket string, requesterPays bool, pathTemplate str
 		maxDetailZoom: maxDetailZoom,
 		bounds:        bounds,
 		zooms:         zooms,
+		zoomSet:       zoomSliceToSet(zooms),
 		format:        format,
 	}, nil
 }
@@ -74,14 +75,23 @@ type metatileJobGenerator struct {
 	maxDetailZoom maptile.Zoom
 	bounds        orb.Bound
 	zooms         []maptile.Zoom
+	zoomSet       map[maptile.Zoom]struct{}
 	format        string
 }
 
 func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, results chan *TileResponse), error) {
+	// Build zoom set once per worker; guards against direct struct construction in tests.
+	zoomSet := x.zoomSet
+	if zoomSet == nil {
+		zoomSet = zoomSliceToSet(x.zooms)
+	}
 	f := func(id int, jobs chan *TileRequest, results chan *TileResponse) {
 		// Instantiate the gzip support stuff once instead on every iteration
 		bodyBuffer := bytes.NewBuffer(nil)
-		bodyGzipper := gzip.NewWriter(bodyBuffer)
+		bodyGzipper, err := gzip.NewWriterLevel(bodyBuffer, gzip.BestCompression)
+		if err != nil {
+			log.Fatalf("Couldn't create gzipper: %+v", err)
+		}
 
 		for metaTileRequest := range jobs {
 			// Download the metatile archive zip to a byte buffer
@@ -130,7 +140,7 @@ func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileReque
 					metaTileRequest.Tile.Z+maptile.Zoom(offsetZ),
 				)
 
-				if !arrayContains(t.Z, x.zooms) {
+				if _, ok := zoomSet[t.Z]; !ok {
 					continue
 				}
 
@@ -183,7 +193,8 @@ func (x *metatileJobGenerator) CreateWorker() (func(id int, jobs chan *TileReque
 }
 
 func (x *metatileJobGenerator) CreateJobs(jobs chan *TileRequest) error {
-	// Convert the list of requested zooms into a list of zooms where metatiles are
+	// Convert the list of requested zooms into a deduplicated list of metatile zooms.
+	seenMetatileZooms := make(map[maptile.Zoom]struct{})
 	metatileZooms := []maptile.Zoom{}
 
 	metaZoom := maptile.Zoom(log2Uint(x.metatileSize))
@@ -203,7 +214,8 @@ func (x *metatileJobGenerator) CreateJobs(jobs chan *TileRequest) error {
 			metatileZoom = x.maxDetailZoom
 		}
 
-		if !arrayContains(metatileZoom, metatileZooms) {
+		if _, seen := seenMetatileZooms[metatileZoom]; !seen {
+			seenMetatileZooms[metatileZoom] = struct{}{}
 			metatileZooms = append(metatileZooms, metatileZoom)
 		}
 	}

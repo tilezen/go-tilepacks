@@ -37,6 +37,7 @@ func NewTapalcatl2JobGenerator(bucket string, requesterPays bool, pathTemplate s
 		materializedZooms: materializedZooms,
 		bounds:            bounds,
 		zooms:             zooms,
+		zoomSet:           zoomSliceToSet(zooms),
 	}, nil
 }
 
@@ -49,6 +50,7 @@ type tapalcatl2JobGenerator struct {
 	materializedZooms []maptile.Zoom
 	bounds            orb.Bound
 	zooms             []maptile.Zoom
+	zoomSet           map[maptile.Zoom]struct{}
 }
 
 func arrayContains(needle maptile.Zoom, haystack []maptile.Zoom) bool {
@@ -60,7 +62,20 @@ func arrayContains(needle maptile.Zoom, haystack []maptile.Zoom) bool {
 	return false
 }
 
+func zoomSliceToSet(zooms []maptile.Zoom) map[maptile.Zoom]struct{} {
+	s := make(map[maptile.Zoom]struct{}, len(zooms))
+	for _, z := range zooms {
+		s[z] = struct{}{}
+	}
+	return s
+}
+
 func (x *tapalcatl2JobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, results chan *TileResponse), error) {
+	// Build zoom set once per worker; guards against direct struct construction in tests.
+	zoomSet := x.zoomSet
+	if zoomSet == nil {
+		zoomSet = zoomSliceToSet(x.zooms)
+	}
 	f := func(id int, jobs chan *TileRequest, results chan *TileResponse) {
 		for request := range jobs {
 			// Download the Tapalcatl2 archive zip to a byte buffer
@@ -97,7 +112,7 @@ func (x *tapalcatl2JobGenerator) CreateWorker() (func(id int, jobs chan *TileReq
 
 				t := maptile.New(tileX, tileY, tileZ)
 
-				if !arrayContains(tileZ, x.zooms) {
+				if _, ok := zoomSet[tileZ]; !ok {
 					continue
 				}
 
