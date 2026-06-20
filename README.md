@@ -30,7 +30,7 @@ Usage of ./bin/build:
   -materialized-zooms string
     	(For tapalcatl2 generator) Specifies the materialized zooms for t2 archives.
   -output-mode string
-    	Valid modes are: disk, mbtiles. (default "mbtiles")
+    	Valid modes are: disk, mbtiles, pmtiles. (default "mbtiles")
   -path-template string
     	(For metatile, tapalcatl2 generator) The template to use for the path part of the S3 path to the t2 archive.
   -timeout int
@@ -40,7 +40,7 @@ Usage of ./bin/build:
   -workers int
     	Number of tile fetch workers to use. (default 25)
   -zooms string
-    	Comma-separated list of zoom levels. (default "0,1,2,3,4,5,6,7,8,9,10")
+    	Comma-separated list of zoom levels or a '{MIN_ZOOM}-{MAX_ZOOM}' range string. (default "0,1,2,3,4,5,6,7,8,9,10")
 ```
 
 ## Job Creators
@@ -82,3 +82,13 @@ Clone tiles to a MBTiles (SQLite) database. Valid `-dsn` strings must be in the 
 ```
 -dsn '{PATH_TO_MBTILES_DATABASE}'
 ```
+
+### pmtiles
+
+Clone tiles to a [PMTiles](https://docs.protomaps.com/pmtiles/) archive. PMTiles is a single-file archive format optimized for cloud storage (S3, GCS) and HTTP range requests. Valid `-dsn` strings must be a path to the output file:
+
+```
+-dsn '{PATH_TO_OUTPUT_FILE}'
+```
+
+Use `--output-format` to specify the tile format (`mvt` for vector tiles, `png`/`jpg` for raster). MVT tiles are stored gzip-compressed inside the archive. Duplicate tile content is deduplicated automatically.
