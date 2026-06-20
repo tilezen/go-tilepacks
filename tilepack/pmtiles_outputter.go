@@ -123,14 +123,13 @@ func (p *pmtilesOutputter) Save(tile maptile.Tile, data []byte) error {
 	return nil
 }
 
-// AssignSpatialMetadata sets the geographic extent in the header.
+// AssignSpatialMetadata sets the geographic extent and zoom range in the header.
 // Coordinates are stored in the PMTiles binary format as integer values scaled
-// by 1e7 (i.e. degrees × 10 000 000). MinZoom and MaxZoom are always inferred
-// from the tile data on Close (matching reference setZoomCenterDefaults behavior);
-// the minZoom/maxZoom parameters are accepted for interface compatibility but are
-// not stored — Close derives them from the actual tile entries.
-// Center defaults to the midpoint of the bounds at the inferred minimum zoom.
+// by 1e7 (i.e. degrees × 10 000 000). Center defaults to the midpoint of the
+// bounds at the minimum zoom if not overridden before Close.
 func (p *pmtilesOutputter) AssignSpatialMetadata(bound orb.Bound, minZoom maptile.Zoom, maxZoom maptile.Zoom) error {
+	p.header.MinZoom = uint8(minZoom)
+	p.header.MaxZoom = uint8(maxZoom)
 	p.header.MinLonE7 = int32(bound.Min[0] * 1e7)
 	p.header.MinLatE7 = int32(bound.Min[1] * 1e7)
 	p.header.MaxLonE7 = int32(bound.Max[0] * 1e7)
@@ -189,27 +188,24 @@ func (p *pmtilesOutputter) Close() error {
 		}
 	}
 
-	// Step 4: derive center from the midpoint of the spatial bounds when the
-	// caller supplied bounds via AssignSpatialMetadata. We use the centerSet flag
-	// rather than testing for zero values, because a valid center can legitimately
-	// be (zoom=0, lon=0, lat=0) (e.g. a world tile at the equator/prime-meridian).
+	// Step 4: derive center and zoom range.
 	//
-	// Always derive MinZoom/MaxZoom from the actual tile data (first and last entry
-	// by Hilbert ID), mirroring the reference setZoomCenterDefaults behavior. This
-	// ensures readers see accurate zoom range even when AssignSpatialMetadata was
-	// not called.
-	if len(p.entries) > 0 {
+	// When AssignSpatialMetadata was called, the caller has supplied explicit
+	// zoom and bounds — use them verbatim and derive center from the midpoint.
+	// When it was not called, infer MinZoom/MaxZoom from the actual tile data
+	// (matching the reference setZoomCenterDefaults behavior) so that readers
+	// see an accurate zoom range even without explicit metadata.
+	if p.centerSet {
+		p.header.CenterZoom = p.header.MinZoom
+		// Compute midpoint in int64 to avoid int32 overflow for western/southern
+		// hemispheres where two large-magnitude negative E7 values sum below -2^31.
+		p.header.CenterLonE7 = int32((int64(p.header.MinLonE7) + int64(p.header.MaxLonE7)) / 2)
+		p.header.CenterLatE7 = int32((int64(p.header.MinLatE7) + int64(p.header.MaxLatE7)) / 2)
+	} else if len(p.entries) > 0 {
 		minZ, _, _ := pmtiles.IDToZxy(p.entries[0].TileID)
 		maxZ, _, _ := pmtiles.IDToZxy(p.entries[len(p.entries)-1].TileID)
 		p.header.MinZoom = minZ
 		p.header.MaxZoom = maxZ
-	}
-	if p.centerSet {
-		p.header.CenterZoom = p.header.MinZoom
-		// Compute midpoint in int64 to avoid int32 overflow for western/southern hemispheres
-		// where two large-magnitude negative values sum below -2^31.
-		p.header.CenterLonE7 = int32((int64(p.header.MinLonE7) + int64(p.header.MaxLonE7)) / 2)
-		p.header.CenterLatE7 = int32((int64(p.header.MinLatE7) + int64(p.header.MaxLatE7)) / 2)
 	}
 
 	// Build JSON metadata from the MbtilesMetadata fields. The PMTiles spec does

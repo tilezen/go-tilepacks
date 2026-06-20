@@ -86,23 +86,22 @@ func TestPmtilesOutputter_CreateTiles_IsNoop(t *testing.T) {
 }
 
 func TestPmtilesOutputter_AssignSpatialMetadata(t *testing.T) {
-	// AssignSpatialMetadata must store the bounding box in the header in units of
-	// 1e-7 degrees (as required by the pmtiles spec). Zoom range is inferred from
-	// tile data on Close, not stored by AssignSpatialMetadata.
+	// AssignSpatialMetadata must store min/max zoom and bounding box in the header
+	// in units of 1e-7 degrees (as required by the pmtiles spec).
 	o, _ := newTestPmtilesOutputter(t, "mvt")
 	bounds := orb.Bound{Min: orb.Point{-180.0, -85.0}, Max: orb.Point{180.0, 85.0}}
 	if err := o.AssignSpatialMetadata(bounds, 0, 14); err != nil {
 		t.Fatalf("AssignSpatialMetadata: %v", err)
 	}
 
+	if o.header.MinZoom != 0 || o.header.MaxZoom != 14 {
+		t.Errorf("zoom range: got %d-%d, want 0-14", o.header.MinZoom, o.header.MaxZoom)
+	}
 	if o.header.MinLonE7 != int32(-180.0*1e7) {
 		t.Errorf("MinLonE7: got %d, want %d", o.header.MinLonE7, int32(-180.0*1e7))
 	}
 	if o.header.MaxLatE7 != int32(85.0*1e7) {
 		t.Errorf("MaxLatE7: got %d, want %d", o.header.MaxLatE7, int32(85.0*1e7))
-	}
-	if !o.centerSet {
-		t.Error("expected centerSet=true after AssignSpatialMetadata")
 	}
 }
 
@@ -496,13 +495,12 @@ func TestRunLengthEncodeEntries_NonContiguousIDs(t *testing.T) {
 }
 
 func TestPmtilesOutputter_Close_CenterDefaultsToMidpoint(t *testing.T) {
-	// When AssignSpatialMetadata is called but no explicit center is set,
-	// Close must derive the center as the midpoint of the bounds at min zoom.
-	// Min/MaxZoom are inferred from tile data (z=2 tile → MinZoom=MaxZoom=2).
-	// Uses western-hemisphere coordinates to catch int32 overflow in E7 arithmetic.
+	// When AssignSpatialMetadata is called, Close must derive center as the midpoint
+	// of the bounds at the caller-supplied min zoom. Uses western-hemisphere
+	// coordinates to catch int32 overflow in E7 midpoint arithmetic.
 	o, path := newTestPmtilesOutputter(t, "mvt")
 	o.CreateTiles()
-	o.Save(maptile.New(0, 0, 2), []byte("d"))
+	o.Save(maptile.New(0, 0, 0), []byte("d"))
 	o.AssignSpatialMetadata(
 		orb.Bound{Min: orb.Point{-122.5, 37.7}, Max: orb.Point{-122.4, 37.8}},
 		2, 10,
@@ -514,7 +512,7 @@ func TestPmtilesOutputter_Close_CenterDefaultsToMidpoint(t *testing.T) {
 	header, _, _ := readPmtilesFile(t, path)
 
 	if header.CenterZoom != 2 {
-		t.Errorf("CenterZoom: got %d, want 2 (min zoom)", header.CenterZoom)
+		t.Errorf("CenterZoom: got %d, want 2 (caller-supplied min zoom)", header.CenterZoom)
 	}
 	// midpoint of -122.5 and -122.4 = -122.45; must not overflow int32
 	wantLon := int32(-122.45 * 1e7)
