@@ -724,3 +724,30 @@ func TestPmtilesOutputter_Close_ZoomRangeInferredFromTiles(t *testing.T) {
 	}
 }
 
+func TestPmtilesOutputter_Close_AssignSpatialMetadataZoomTakesPrecedence(t *testing.T) {
+	// When AssignSpatialMetadata is called, the zoom range it supplies must be
+	// written verbatim to the header — Close must NOT overwrite it with zoom
+	// values inferred from the tile data. This matches the contract of the other
+	// outputters, which store caller-supplied metadata as-is.
+	o, path := newTestPmtilesOutputter(t, "mvt")
+	o.CreateTiles()
+	// Tile is at z=0, but the caller declares the tileset covers z=2–10.
+	o.Save(maptile.New(0, 0, 0), []byte("d"))
+	o.AssignSpatialMetadata(
+		orb.Bound{Min: orb.Point{-180, -85}, Max: orb.Point{180, 85}},
+		2, 10,
+	)
+	if err := o.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	header, _, _ := readPmtilesFile(t, path)
+	if header.MinZoom != 2 {
+		t.Errorf("MinZoom: got %d, want 2 (from AssignSpatialMetadata, not tile data)", header.MinZoom)
+	}
+	if header.MaxZoom != 10 {
+		t.Errorf("MaxZoom: got %d, want 10 (from AssignSpatialMetadata, not tile data)", header.MaxZoom)
+	}
+}
+
+
