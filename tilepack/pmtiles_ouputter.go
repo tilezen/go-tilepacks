@@ -255,14 +255,17 @@ func NewPmtilesOutputter(dsn string, outputType string, metadata *MbtilesMetadat
 		return nil, fmt.Errorf("error creating pmtiles output file: %w", err)
 	}
 
+	compressBuf := &bytes.Buffer{}
 	outputter := &pmtilesOutputter{
-		outFile:   outFile,
-		tileset:   roaring64.New(),
-		hashFunc:  fnv.New128a(),
-		tileData:  tmpFile,
-		offsetMap: make(map[string]offsetLen),
-		entries:   make([]pmtiles.EntryV3, 0),
-		header:    pmtiles.HeaderV3{},
+		outFile:        outFile,
+		tileset:        roaring64.New(),
+		hashFunc:       fnv.New128a(),
+		tileData:       tmpFile,
+		offsetMap:      make(map[string]offsetLen),
+		entries:        make([]pmtiles.EntryV3, 0),
+		header:         pmtiles.HeaderV3{},
+		compressBuffer: compressBuf,
+		compressor:     gzip.NewWriter(compressBuf),
 	}
 
 	switch outputType {
