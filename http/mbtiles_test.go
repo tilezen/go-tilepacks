@@ -1,7 +1,10 @@
 package http
 
 import (
+	"bytes"
+	"compress/gzip"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -189,12 +192,26 @@ func TestMbtilesHandler_InvalidPath(t *testing.T) {
 	}
 }
 
-// TestMbtilesHandler_GzipHeader verifies that the Content-Encoding: gzip
-// header is set when the client signals it accepts gzip-encoded responses.
-// (Tiles in an MBTiles file are stored gzip-compressed and sent as-is.)
+// gzipData compresses b and returns the compressed bytes.
+func gzipData(b []byte) []byte {
+	var buf bytes.Buffer
+	w := gzip.NewWriter(&buf)
+	w.Write(b)
+	w.Close()
+	return buf.Bytes()
+}
+
+// TestMbtilesHandler_GzipHeader verifies that:
+//   - Content-Encoding: gzip is set when the client accepts gzip
+//   - The response body is the exact gzip bytes stored in the reader (tiles are
+//     stored pre-compressed and must be passed through unmodified)
 func TestMbtilesHandler_GzipHeader(t *testing.T) {
 	tile := maptile.New(0, 0, 0)
-	reader := &stubReader{data: map[maptile.Tile][]byte{tile: []byte("data")}}
+	// Store actually-compressed bytes so we can verify passthrough integrity.
+	originalData := []byte("real-tile-data")
+	compressed := gzipData(originalData)
+
+	reader := &stubReader{data: map[maptile.Tile][]byte{tile: compressed}}
 	handler := MbtilesHandler(reader)
 
 	req := httptest.NewRequest(http.MethodGet, "/tilezen/vector/v1/512/all/0/0/0.mvt", nil)
@@ -205,5 +222,18 @@ func TestMbtilesHandler_GzipHeader(t *testing.T) {
 
 	if ce := rr.Header().Get("Content-Encoding"); ce != "gzip" {
 		t.Errorf("expected Content-Encoding: gzip, got %q", ce)
+	}
+
+	// The body must be valid gzip that decompresses to the original data.
+	gr, err := gzip.NewReader(rr.Body)
+	if err != nil {
+		t.Fatalf("response body is not valid gzip: %v", err)
+	}
+	got, err := io.ReadAll(gr)
+	if err != nil {
+		t.Fatalf("decompressing response: %v", err)
+	}
+	if !bytes.Equal(got, originalData) {
+		t.Errorf("decompressed body mismatch: got %q, want %q", got, originalData)
 	}
 }

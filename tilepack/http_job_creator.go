@@ -128,7 +128,7 @@ func doHTTPWithRetry(client *http.Client, request *http.Request, nRetries int) (
 
 		time.Sleep(sleep)
 		sleep *= 2.0
-		if sleep > 30.0 {
+		if sleep > 30*time.Second {
 			sleep = 30 * time.Second
 		}
 	}

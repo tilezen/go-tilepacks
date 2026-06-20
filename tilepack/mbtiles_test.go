@@ -39,8 +39,8 @@ func newTestOutputter(t *testing.T, invertedY bool) *mbtilesOutputter {
 func rawTileRow(t *testing.T, db *sql.DB, tile maptile.Tile) (col, row uint32, found bool) {
 	t.Helper()
 	err := db.QueryRow(
-		"SELECT tile_column, tile_row FROM map WHERE zoom_level=? LIMIT 1",
-		tile.Z,
+		"SELECT tile_column, tile_row FROM map WHERE zoom_level=? AND tile_column=? LIMIT 1",
+		tile.Z, tile.X,
 	).Scan(&col, &row)
 	if err == sql.ErrNoRows {
 		return 0, 0, false
@@ -130,7 +130,7 @@ func TestMbtilesOutputter_InvertedY_True_PreservesY(t *testing.T) {
 	// For tile (z=1, x=0, y=1) the stored row should remain 1.
 	o := newTestOutputter(t, true)
 
-	tile := maptile.New(0, 1, 1) // TMS y=1 → northernmost row at z=1
+	tile := maptile.New(0, 1, 1) // TMS y=1 → northern row at z=1 (TMS Y=0 is southern)
 	if err := o.Save(tile, []byte("d")); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -398,6 +398,33 @@ func TestMbtilesOutputter_BatchBoundary_Issue41(t *testing.T) {
 	// Close must not panic or error even though txn is nil after the last batch.
 	if err := o.Close(); err != nil {
 		t.Fatalf("Close after exact-batch-size tiles: %v", err)
+	}
+}
+
+func TestMbtilesOutputter_BatchBoundary_BatchSize1(t *testing.T) {
+	// Additional regression for issue #41: batchSize=1 means every single Save()
+	// commits and sets txn=nil.  Saving N>1 tiles must re-open a transaction on
+	// each iteration, and Close() must still succeed.
+	path := filepath.Join(t.TempDir(), "batch-size1.mbtiles")
+	o, err := NewMbtilesOutputter(path, 1, false, NewMbtilesMetadata(map[string]string{
+		"name": "test", "format": "pbf",
+	}))
+	if err != nil {
+		t.Fatalf("NewMbtilesOutputter: %v", err)
+	}
+	if err := o.CreateTiles(); err != nil {
+		t.Fatalf("CreateTiles: %v", err)
+	}
+
+	for i := range 3 {
+		tile := maptile.New(uint32(i), 0, 1)
+		if err := o.Save(tile, []byte("data")); err != nil {
+			t.Fatalf("Save tile %d: %v", i, err)
+		}
+	}
+
+	if err := o.Close(); err != nil {
+		t.Fatalf("Close with batchSize=1: %v", err)
 	}
 }
 

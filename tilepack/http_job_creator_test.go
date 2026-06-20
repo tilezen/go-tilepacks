@@ -74,10 +74,9 @@ func TestDoHTTPWithRetry_ClientError_NoRetry(t *testing.T) {
 }
 
 func TestDoHTTPWithRetry_ServerError_ExhaustsRetries(t *testing.T) {
-	// 5xx responses are retried. When all retries are exhausted an error is returned.
-	// NOTE: the production sleep cap has a bug (compares time.Duration to 30.0ns
-	// instead of 30s), so each retry sleeps 30s. We use nRetries=0 here to test
-	// the exhaustion path without actually sleeping.
+	// 5xx responses are retried. When all retries are exhausted an HTTPError is returned.
+	// We use nRetries=1 so the server is called once, returns 503, and the function
+	// gives up after the single attempt.
 	callCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
@@ -87,13 +86,12 @@ func TestDoHTTPWithRetry_ServerError_ExhaustsRetries(t *testing.T) {
 
 	client := &http.Client{Timeout: 2 * time.Second}
 	req, _ := http.NewRequest("GET", srv.URL, nil)
-	_, err := doHTTPWithRetry(client, req, 0)
+	_, err := doHTTPWithRetry(client, req, 1)
 	if err == nil {
 		t.Fatal("expected error after exhausting retries")
 	}
-	// With nRetries=0 the loop body never executes, so the server is never called.
-	if callCount != 0 {
-		t.Errorf("expected 0 server calls with nRetries=0, got %d", callCount)
+	if callCount != 1 {
+		t.Errorf("expected 1 server call with nRetries=1, got %d", callCount)
 	}
 }
 
