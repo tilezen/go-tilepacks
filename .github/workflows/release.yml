@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
 
     container:
-      image: docker.io/goreleaser/goreleaser-cross:v1.23
+      image: docker.io/goreleaser/goreleaser-cross:v1.26.3
 
     steps:
       - name: Checkout

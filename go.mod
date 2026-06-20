@@ -1,6 +1,6 @@
 module github.com/tilezen/go-tilepacks
 
-go 1.23
+go 1.26
 
 require (
 	github.com/aaronland/go-string v1.0.0
