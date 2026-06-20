@@ -77,8 +77,8 @@ github.com/rivo/uniseg
 # github.com/schollz/progressbar/v3 v3.18.0
 ## explicit; go 1.22
 github.com/schollz/progressbar/v3
-# go.mongodb.org/mongo-driver v1.11.4
-## explicit; go 1.13
+# go.mongodb.org/mongo-driver v1.17.7
+## explicit; go 1.18
 go.mongodb.org/mongo-driver/bson
 go.mongodb.org/mongo-driver/bson/bsoncodec
 go.mongodb.org/mongo-driver/bson/bsonoptions
