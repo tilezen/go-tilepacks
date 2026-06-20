@@ -206,8 +206,10 @@ func (p *pmtilesOutputter) Close() error {
 	}
 	if p.centerSet {
 		p.header.CenterZoom = p.header.MinZoom
-		p.header.CenterLonE7 = (p.header.MinLonE7 + p.header.MaxLonE7) / 2
-		p.header.CenterLatE7 = (p.header.MinLatE7 + p.header.MaxLatE7) / 2
+		// Compute midpoint in int64 to avoid int32 overflow for western/southern hemispheres
+		// where two large-magnitude negative values sum below -2^31.
+		p.header.CenterLonE7 = int32((int64(p.header.MinLonE7) + int64(p.header.MaxLonE7)) / 2)
+		p.header.CenterLatE7 = int32((int64(p.header.MinLatE7) + int64(p.header.MaxLatE7)) / 2)
 	}
 
 	// Build JSON metadata from the MbtilesMetadata fields. The PMTiles spec does
