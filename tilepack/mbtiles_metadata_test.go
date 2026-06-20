@@ -5,6 +5,7 @@ import (
 )
 
 func TestMbtilesMetadata_Get_Exists(t *testing.T) {
+	// Get must return the value and ok=true for a key that was set.
 	m := NewMbtilesMetadata(map[string]string{"name": "my-tileset"})
 	v, ok := m.Get("name")
 	if !ok {
@@ -16,6 +17,7 @@ func TestMbtilesMetadata_Get_Exists(t *testing.T) {
 }
 
 func TestMbtilesMetadata_Get_Missing(t *testing.T) {
+	// Get must return ok=false for a key that was never set.
 	m := NewMbtilesMetadata(map[string]string{})
 	_, ok := m.Get("missing")
 	if ok {
@@ -24,6 +26,7 @@ func TestMbtilesMetadata_Get_Missing(t *testing.T) {
 }
 
 func TestMbtilesMetadata_Bounds_Valid(t *testing.T) {
+	// Bounds must parse the MBTiles spec "minx,miny,maxx,maxy" format into an orb.Bound.
 	m := NewMbtilesMetadata(map[string]string{
 		"bounds": "-122.4,37.7,-122.3,37.8",
 	})
@@ -64,6 +67,7 @@ func TestMbtilesMetadata_Bounds_NonNumeric(t *testing.T) {
 }
 
 func TestMbtilesMetadata_Center_Valid(t *testing.T) {
+	// Center must parse the MBTiles spec "lon,lat,zoom" format into a point and zoom level.
 	m := NewMbtilesMetadata(map[string]string{"center": "-77.0,38.9,5"})
 	pt, z, err := m.Center()
 	if err != nil {
@@ -96,6 +100,7 @@ func TestMbtilesMetadata_Center_WrongPartCount(t *testing.T) {
 }
 
 func TestMbtilesMetadata_MinZoom_Valid(t *testing.T) {
+	// MinZoom must parse the integer string value from the metadata map.
 	m := NewMbtilesMetadata(map[string]string{"minzoom": "2"})
 	z, err := m.MinZoom()
 	if err != nil {
@@ -107,6 +112,7 @@ func TestMbtilesMetadata_MinZoom_Valid(t *testing.T) {
 }
 
 func TestMbtilesMetadata_MinZoom_Missing(t *testing.T) {
+	// A missing 'minzoom' key must return an error, not a zero value.
 	m := NewMbtilesMetadata(map[string]string{})
 	_, err := m.MinZoom()
 	if err == nil {
@@ -115,6 +121,7 @@ func TestMbtilesMetadata_MinZoom_Missing(t *testing.T) {
 }
 
 func TestMbtilesMetadata_MinZoom_NonNumeric(t *testing.T) {
+	// A non-integer 'minzoom' value must return a parse error.
 	m := NewMbtilesMetadata(map[string]string{"minzoom": "two"})
 	_, err := m.MinZoom()
 	if err == nil {
@@ -123,6 +130,7 @@ func TestMbtilesMetadata_MinZoom_NonNumeric(t *testing.T) {
 }
 
 func TestMbtilesMetadata_MaxZoom_Valid(t *testing.T) {
+	// MaxZoom must parse the integer string value from the metadata map.
 	m := NewMbtilesMetadata(map[string]string{"maxzoom": "14"})
 	z, err := m.MaxZoom()
 	if err != nil {
@@ -134,6 +142,7 @@ func TestMbtilesMetadata_MaxZoom_Valid(t *testing.T) {
 }
 
 func TestMbtilesMetadata_MaxZoom_Missing(t *testing.T) {
+	// A missing 'maxzoom' key must return an error, not a zero value.
 	m := NewMbtilesMetadata(map[string]string{})
 	_, err := m.MaxZoom()
 	if err == nil {
@@ -142,6 +151,7 @@ func TestMbtilesMetadata_MaxZoom_Missing(t *testing.T) {
 }
 
 func TestMbtilesMetadata_MaxZoom_NonNumeric(t *testing.T) {
+	// A non-integer 'maxzoom' value must return a parse error.
 	m := NewMbtilesMetadata(map[string]string{"maxzoom": "fourteen"})
 	_, err := m.MaxZoom()
 	if err == nil {
@@ -150,6 +160,7 @@ func TestMbtilesMetadata_MaxZoom_NonNumeric(t *testing.T) {
 }
 
 func TestMbtilesMetadata_Format(t *testing.T) {
+	// Format must return the tile format string (e.g. "pbf", "png") from the metadata map.
 	m := NewMbtilesMetadata(map[string]string{"format": "pbf"})
 	f, err := m.Format()
 	if err != nil {
@@ -161,6 +172,7 @@ func TestMbtilesMetadata_Format(t *testing.T) {
 }
 
 func TestMbtilesMetadata_Name(t *testing.T) {
+	// Name must return the human-readable tileset name from the metadata map.
 	m := NewMbtilesMetadata(map[string]string{"name": "test-tiles"})
 	n, err := m.Name()
 	if err != nil {
