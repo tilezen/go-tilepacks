@@ -373,10 +373,10 @@ func optimizeDirectories(entries []pmtiles.EntryV3, targetRootLen int, compressi
 // Each root entry has RunLength=0, which signals to readers that the entry is a
 // leaf-directory pointer rather than a tile-data pointer.
 func buildRootsLeaves(entries []pmtiles.EntryV3, leafSize int, compression pmtiles.Compression) ([]byte, []byte, int) {
-	numLeaves := (len(entries) + leafSize - 1) / leafSize
-	rootEntries := make([]pmtiles.EntryV3, 0, numLeaves)
+	estLeaves := (len(entries) + leafSize - 1) / leafSize
+	rootEntries := make([]pmtiles.EntryV3, 0, estLeaves)
 	leavesBytes := make([]byte, 0)
-	numLeaves = 0
+	numLeaves := 0
 
 	for i := 0; i < len(entries); i += leafSize {
 		numLeaves++
