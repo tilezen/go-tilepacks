@@ -3,6 +3,7 @@ package tilepack
 import (
 	"compress/gzip"
 	"bytes"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -336,5 +337,31 @@ func TestFileTransportXYZWorker_FetchesTile(t *testing.T) {
 	resp := runWorker(t, gen, "file:///0/0/0.pbf", maptile.New(0, 0, 0))
 	if string(resp.Data) != string(tileData) {
 		t.Errorf("expected %q, got %q", tileData, resp.Data)
+	}
+}
+
+func TestXYZWorker_EnsureGzip_ValidTrailer(t *testing.T) {
+	// Regression for gzip.Flush() vs gzip.Close(): Flush() writes a sync-flush
+	// block but omits the CRC32/ISIZE trailer required by RFC 1952. A compliant
+	// reader (io.ReadAll via gzip.NewReader) returns an error on such a stream.
+	// This test verifies the stored gzip stream has a valid trailer.
+	original := []byte("tile-payload")
+	srv := setupTileServer(t, "/0/0/0.pbf", original, "")
+	defer srv.Close()
+
+	gen, _ := NewXYZJobGenerator(srv.URL+"/{z}/{x}/{y}.pbf", orb.Bound{}, nil, 5*time.Second, false, true, "pbf")
+	resp := runWorker(t, gen, srv.URL+"/0/0/0.pbf", maptile.New(0, 0, 0))
+
+	gr, err := gzip.NewReader(bytes.NewReader(resp.Data))
+	if err != nil {
+		t.Fatalf("gzip.NewReader: %v", err)
+	}
+	// io.ReadAll propagates the gzip reader's checksum/trailer error; bytes.Buffer.ReadFrom does not.
+	got, err := io.ReadAll(gr)
+	if err != nil {
+		t.Fatalf("reading gzip stream: %v (missing CRC32/ISIZE trailer — was Flush used instead of Close?)", err)
+	}
+	if !bytes.Equal(got, original) {
+		t.Errorf("decompressed mismatch: got %q, want %q", got, original)
 	}
 }

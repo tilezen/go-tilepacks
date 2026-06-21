@@ -382,3 +382,41 @@ func TestT2Worker_SkipsOutOfBounds(t *testing.T) {
 		t.Errorf("expected 0 responses for zoom-filtered tile, got %d", count)
 	}
 }
+
+func TestMetatileWorker_SkipsWrongZoom(t *testing.T) {
+	// Tiles extracted from a metatile whose effective zoom is not in the requested
+	// zoom list must be silently skipped. This exercises the zoomSet filter path.
+	// The metatile request is at z=0; offsetZ=1 makes the extracted tile z=1.
+	rawData := []byte("z1-tile")
+	zipBytes := buildMetatileZip(t, 1, 0, 0, "mvt", rawData) // offsetZ=1 → extracted z=1
+
+	fake := &fakeS3Downloader{objects: map[string][]byte{"0/0/0.zip": zipBytes}}
+	gen := &metatileJobGenerator{
+		s3Client:      fake,
+		bucket:        "b",
+		pathTemplate:  "{z}/{x}/{y}.zip",
+		layerName:     "all",
+		format:        "mvt",
+		metatileSize:  8,
+		maxDetailZoom: 0,
+		bounds:        orb.Bound{Min: orb.Point{-180, -85}, Max: orb.Point{180, 85}},
+		zooms:         []maptile.Zoom{0}, // only zoom 0 — z=1 tile must be dropped
+	}
+
+	jobs := make(chan *TileRequest, 1)
+	results := make(chan *TileResponse, 10)
+	worker, _ := gen.CreateWorker()
+
+	jobs <- &TileRequest{Tile: maptile.New(0, 0, 0), URL: "0/0/0.zip"}
+	close(jobs)
+	worker(0, jobs, results)
+	close(results)
+
+	var count int
+	for range results {
+		count++
+	}
+	if count != 0 {
+		t.Errorf("expected 0 responses for out-of-zoom-list tile, got %d", count)
+	}
+}
