@@ -167,3 +167,33 @@ func TestDiskOutputter_Close(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 }
+
+func TestDiskOutputter_Save_OverwriteTruncates(t *testing.T) {
+	// Re-saving a tile with shorter content must not leave stale trailing bytes.
+	// Regression for the O_RDWR|O_CREATE (no O_TRUNC) bug: without O_TRUNC, the
+	// old tail survives and the file length is the max of old and new content.
+	dir := t.TempDir()
+	o, err := NewDiskOutputter("root=" + dir + " format=pbf")
+	if err != nil {
+		t.Fatalf("NewDiskOutputter: %v", err)
+	}
+	if err := o.CreateTiles(); err != nil {
+		t.Fatalf("CreateTiles: %v", err)
+	}
+
+	tile := maptile.New(0, 0, 0)
+	if err := o.Save(tile, []byte("long-original-data")); err != nil {
+		t.Fatalf("first Save: %v", err)
+	}
+	if err := o.Save(tile, []byte("short")); err != nil {
+		t.Fatalf("second Save: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "0/0/0.pbf"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != "short" {
+		t.Errorf("expected %q after overwrite, got %q", "short", got)
+	}
+}

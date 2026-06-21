@@ -141,7 +141,10 @@ func (x *xyzJobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, r
 
 		// Instantiate the gzip support stuff once instead on every iteration
 		bodyBuffer := bytes.NewBuffer(nil)
-		bodyGzipper := gzip.NewWriter(bodyBuffer)
+		bodyGzipper, err := gzip.NewWriterLevel(bodyBuffer, gzip.BestCompression)
+		if err != nil {
+			log.Fatalf("Couldn't create gzipper: %+v", err)
+		}
 
 		for request := range jobs {
 			start := time.Now()
@@ -204,9 +207,9 @@ func (x *xyzJobGenerator) CreateWorker() (func(id int, jobs chan *TileRequest, r
 						continue
 					}
 
-					err = bodyGzipper.Flush()
+					err = bodyGzipper.Close()
 					if err != nil {
-						log.Printf("Couldn't flush gzipper: %+v", err)
+						log.Printf("Couldn't close gzipper: %+v", err)
 						continue
 					}
 
